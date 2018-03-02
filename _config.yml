@@ -1,5 +1,5 @@
 # Site settings
-title: Life is like walking in the snow.
+title: Android Developing Channel.
 SEOTitle: Allen Vork's blog | BY Blog
 header-img: img/post-bg-desk.jpg
 email: 594074064@qq.com
@@ -11,8 +11,8 @@ github_repo: "https://github.com/AllenVork/AllenVork.github.io.git" # you code r
 
 # Sidebar settings
 sidebar: true                           # whether or not using Sidebar.
-sidebar-about-description: "Goals determine what you going to be!"
-sidebar-avatar: /img/about-BY-gentle.jpg      # use absolute URL, seeing it's used in both `/` and `/about/`
+sidebar-about-description: "Life is like walking in the snow because every step shows!"
+sidebar-avatar: /img/selfie.jpg      # use absolute URL, seeing it's used in both `/` and `/about/`
 
 
 

@@ -1,7 +1,7 @@
 # Site settings
 title: Day By Day.
 SEOTitle: Allen Vork's blog
-header-img: img/post-bg-github-cup.jpg
+header-img: img/tag-bg-o.jpg
 email: 594074064@qq.com
 description: "Every failure is leading towards success."
 keyword: "allenvork, Android"
@@ -68,7 +68,6 @@ gitalk:
   owner: allenvork    #github用户名
   admin: allenvork
   distractionFreeMode: true #是否启用类似FB的阴影遮罩
-
 
 # 统计
 

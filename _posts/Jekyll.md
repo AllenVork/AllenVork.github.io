@@ -1,10 +1,10 @@
 ---
 layout:     post
 title:      Windows 使用 Jekyll 创建 GitHub Pages 个人博客
-subtitle:   零基础免费搭建网站
+subtitle:   函数式编程框架 ReactiveCocoa 进阶
 date:       2018-03-03
 author:     Allen Vork
-header-img: img/selfie.jpg
+header-img: img/post-bg-ios9-web.jpg
 catalog: true
 tags:
     - Jekyll

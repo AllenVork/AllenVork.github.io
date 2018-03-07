@@ -3,7 +3,7 @@ title: Day By Day.
 SEOTitle: Allen Vork's blog
 header-img: img/nightfall.jpg
 email: 594074064@qq.com
-description: "Every failure is leading towards success."
+description: "I know what u want."
 keyword: "allenvork, Android"
 url: "http://allenvork.github.io"          # your host, for absolute URL
 baseurl: ""      # for example, '/blog' if your blog hosted on 'host/blog'
@@ -11,7 +11,7 @@ github_repo: "https://github.com/AllenVork/AllenVork.github.io.git" # you code r
 
 # Sidebar settings
 sidebar: true                           # whether or not using Sidebar.
-sidebar-about-description: "Life is like walking in the snow because every step shows!"
+sidebar-about-description: "The world is about exchanging one thing for another."
 sidebar-avatar: /img/selfie.jpg      # use absolute URL, seeing it's used in both `/` and `/about/`
 
 

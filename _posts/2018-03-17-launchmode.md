@@ -3,7 +3,7 @@ layout:     post
 title:      android 四种启动模式
 subtitle:   
 author:     Allen Vork
-header-img: img/tag-bg-o.jpg
+header-img: img/post-bg-kuaidi.jpg
 catalog: true
 tags:
     - Design Pattern    
@@ -41,8 +41,8 @@ tags:
       TaskRecord{5c74055 #101 A=com.example.allen.demo U=0 StackId=1 sz=1}
         Run #2: ActivityRecord{d30501e u0 com.example.allen.demo/.MainActivity t101}
       TaskRecord{f129b5b #99 A=com.example.allen.launchmode U=0 StackId=1 sz=1}
-        Run #1: ActivityRecord{caaed3f u0 com.example.allen.launchmode/.Main2Act                                 ivity t99}
+        Run #1: ActivityRecord{caaed3f u0 com.example.allen.launchmode/.Main2Activity t99}
       TaskRecord{fd59237 #98 A=com.example.allen.launchmode U=0 StackId=1 sz=1}
-        Run #0: ActivityRecord{909cddc u0 com.example.allen.launchmode/.MainActi                                 vity t98}
+        Run #0: ActivityRecord{909cddc u0 com.example.allen.launchmode/.MainActivity t98}
 ```
 可以看出有2个进程，3个 task stack 分别为 101 99 98。 每个 task stack 中都只有一个 activity。

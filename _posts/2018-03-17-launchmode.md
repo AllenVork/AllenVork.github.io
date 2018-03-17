@@ -1,4 +1,13 @@
-# android 四种启动模式
+---
+layout:     post
+title:      android 四种启动模式
+subtitle:   
+author:     Allen Vork
+header-img: img/tag-bg-o.jpg
+catalog: true
+tags:
+    - Design Pattern    
+---
 
 ## standard
 该模式为 activity 的标准启动模式，每次启动都会新创建一个 activity。新启动的 activity　会被放在启动该 activity 所在的栈的栈顶。

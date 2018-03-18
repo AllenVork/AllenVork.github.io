@@ -57,6 +57,9 @@ tags:
 ## 上面提的到 task 到底是什么？
 task 是一组相关联的 activity 的集合，用于管理界面的跳转和返回。它是存在于 back stack（后压栈）中。它是可以跨应用的，即不同的应用的 activity 可以在同一个 task 中。
 
-## taskAffinity
-taskAffinity 指的是 activity 的归属，即 activity 属于哪个 task。如果 activity 没有显式地指明 taskAffinity，那么它的这个属性就等于 Application 指明的 taskAffinity。如果 Application 也没有指明，则 taskAffinity 的值等于应用的包名。    
-该属性与 allowTaskReparenting 结合使用。allowTaskReparenting 用于标记 activity 是否从启动的 Task 移动到 taskAffinity 所指定的 task 中。
+## taskAffinity 相关属性
+**taskAffinity** 指的是 activity 的归属，即 activity 属于哪个 task。如果 activity 没有显式地指明 taskAffinity，那么它的这个属性就等于 Application 指明的 taskAffinity。如果 Application 也没有指明，则 taskAffinity 的值等于应用的包名。     
+taskAffinity 可以与 **allowTaskReparenting** 结合使用。allowTaskReparenting 用于标记 activity 是否从启动的 Task 移动到 taskAffinity 所指定的 task 中。true 表示会移动，false 表示不会。该属性的特性在于当你启动该模式的 activity 的时候，会在启动者的 task 栈顶（并不是 taskAffinity 所指定的 task 中）。但是一旦有与被启动的 activity 的 taskAffinity 相同的 task 切换的前台的时候，这个被启动的 activity 会被移动到 taskAffinity 所指定的栈中。    
+**allowTaskReparenting 只有在发生 resettask 的时候才会生效**。而我们从桌面上启动的程序都带了`FLAG_ACTIVITY_RESET_TASK_IF_NEEDED`。所以从home上启动程序会进行task reset.也就会使用到这个allowTaskReparenting。    
+下面看一个例子：    
+![]({{site.url}}/img/android/basic/launchmode/allowtaskreparenting.png) 

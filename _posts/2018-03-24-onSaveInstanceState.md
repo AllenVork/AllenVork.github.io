@@ -1,6 +1,6 @@
 ---
 layout:     post
-title:      onSavedInstanceState 和 onRestoreInstanceState
+title:      onSaveInstanceState 和 onRestoreInstanceState
 subtitle:   
 author:     Allen Vork
 header-img: img/post-bg-kuaidi.jpg
@@ -11,7 +11,7 @@ tags:
 ---
 
 ## 作用
-当 activity **变得容易销毁**的时候，会调用 onSavedInstanceState 方法来存储数据。如果 Activity 销毁了，则会使用 onRestoreInstanceState 来恢复数据（onSaveInstanceState 中保存的数据在恢复时也会传给 onCreate)。
+当 activity **变得容易销毁**的时候，会调用 onSaveInstanceState 方法来存储数据。如果 Activity 销毁了，则会使用 onRestoreInstanceState 来恢复数据（onSaveInstanceState 中保存的数据在恢复时也会传给 onCreate)。
 
 ## 调用场景
 > onSaveInstanceState
@@ -32,7 +32,7 @@ tags:
 onSaveInstanceState 出现在 onStop 或 onPause 之前，onRestoreInstanceState 出现在 onstart 与 onResume 之间。    
 下面是旋转屏幕时，Activity 的生命周期的变化图：
 ![]({{site.url}}/img/android/basic/onsaveinstancestate/lifecycle.png) 
-注意，onSavedInstanceState 并不一定在 onPause 之后调用。
+注意，onSaveInstanceState 并不一定在 onPause 之后调用。
 
 ### onCreate(Bundle savedInstanceState) 中既然能恢复数据，为什么还需要 onRestoreInstanceState?
 如果是在 onCreate 中进行恢复数据的话，会导致每次创建（而非恢复）Activity 的时候也要有处理这个 bundle （判断是否为空）的逻辑。而且用 onRestoreInstanceState 方法，我们可以将恢复的逻辑和创建的逻辑解耦。
@@ -123,9 +123,9 @@ final void performSaveInstanceState(Bundle outState) {
         mActivityTransitionState.saveState(outState);  
     }  
 ```
-我们看到这样就调用到了 activity 的 onSaveInstanceState 方法。即如果没有调用 finish() 方法的话，onSavedInstanceState() 方法会在 onPause() 之前调用。
+我们看到这样就调用到了 activity 的 onSaveInstanceState 方法。即如果没有调用 finish() 方法的话，onSaveInstanceState() 方法会在 onPause() 之前调用。
 
-### 下面来看看 Activity 在 stop 的时候会不会调用 onSavedInstanceState 方法
+### 下面来看看 Activity 在 stop 的时候会不会调用 onSaveInstanceState 方法
 在 Activity 执行 onStop 时会调用到 ActivityThread 中的 handleStopActivity() 方法，最终会调用到：
 ```java
     private void performStopActivityInner(ActivityClientRecord r,

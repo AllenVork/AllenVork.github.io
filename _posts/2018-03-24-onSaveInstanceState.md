@@ -44,6 +44,7 @@ onSaveInstanceState 出现在 onStop 或 onPause 之前，onRestoreInstanceState
 -----------------------
 ## 源码解析
 > **默认的 onSaveInstanceState 保存了些什么**    
+
 ```java
     protected void onSaveInstanceState(Bundle outState) {
         outState.putBundle(WINDOW_HIERARCHY_TAG, mWindow.saveHierarchyState());
@@ -310,7 +311,6 @@ window 是一个抽象类，实现类是 PhoneWindow，我们来看看它的 sav
         }
 ```
 只要 targetSdk < 11 就返回 true。那么意思就是只要没有调用 finish() 方法，则不会调用 callCallActivityOnSaveInstanceState 方法。      
-
 ``` java
     private void callCallActivityOnSaveInstanceState(ActivityClientRecord r) {
         r.state = new Bundle();

@@ -43,8 +43,7 @@ onSaveInstanceState 出现在 onStop 或 onPause 之前，onRestoreInstanceState
 
 -----------------------
 ## 源码解析
-> 默认的 onSaveInstanceState 保存了些什么    
-
+> **默认的 onSaveInstanceState 保存了些什么**    
 ```java
     protected void onSaveInstanceState(Bundle outState) {
         outState.putBundle(WINDOW_HIERARCHY_TAG, mWindow.saveHierarchyState());
@@ -62,9 +61,10 @@ onSaveInstanceState 出现在 onStop 或 onPause 之前，onRestoreInstanceState
     }
 ```
 可以看到它调用了 mWindow.saveHierarchyState 来遍历 Activity 的 view 树，然后调用 mFragments.saveAllState 来保存 Fragment 的数据。    
-**首先我们来看看 window.saveHierarchyState**    
-window 是一个抽象类，实现类是 PhoneWindow:
 
+
++ **首先我们来看看 window.saveHierarchyState：**    
+window 是一个抽象类，实现类是 PhoneWindow，我们来看看它的 saveHierarchyState:    
 ```java
     public Bundle saveHierarchyState() {
         Bundle outState = new Bundle();
@@ -73,6 +73,8 @@ window 是一个抽象类，实现类是 PhoneWindow:
         }
 
         SparseArray<Parcelable> states = new SparseArray<Parcelable>();
+
+		//保存 Activity 中的 View 的状态
         mContentParent.saveHierarchyState(states);
         outState.putSparseParcelableArray(VIEWS_TAG, states);
 
@@ -98,16 +100,13 @@ window 是一个抽象类，实现类是 PhoneWindow:
         return outState;
     }
 ```
-它调用了 mContentParent.saveHierarchyState(states)，mContentParent 是 DecorView 或者 DecorView 的 child。由于它是一个 ViewGroup，没有 saveHierarchyState 方法，这里它掉的是 View 的方法：    
-
+它调用了 mContentParent.saveHierarchyState(states)，mContentParent 是 DecorView 或者 DecorView 的 child。由于它是一个 ViewGroup，没有 saveHierarchyState 方法，这里它掉的是 View 的方法：
 ```java
     public void saveHierarchyState(SparseArray<Parcelable> container) {
         dispatchSaveInstanceState(container);
     }
 ```
-
-再来看看 ViewGroup 和 View 的 dispatchSaveInstanceState 方法：    
-
+再来看看 ViewGroup 和 View 的 dispatchSaveInstanceState 方法：
 ```java
     protected void dispatchSaveInstanceState(SparseArray<Parcelable> container) {
 		//ViewGroup 会调用 View 的 dispatchSaveInstanceState 来保存自己的状态
@@ -143,9 +142,8 @@ window 是一个抽象类，实现类是 PhoneWindow:
     }
 ```
 
-**再来看看如何保存 Fragment 的状态的：**    
++ **再来看看如何保存 Fragment 的状态的：**   
 它最终是调用到 FragmentMangerImpl 的 SaveAllState 方法：    
-
 ```java
     Parcelable saveAllState() {
 		...
@@ -217,9 +215,7 @@ window 是一个抽象类，实现类是 PhoneWindow:
         return fms;
     }
 ```
-
 我们看看 saveFragmentBasicState 中保存了哪些基本状态：
-    
 ```java
     Bundle saveFragmentBasicState(Fragment f) {
         Bundle result = null;
@@ -227,7 +223,7 @@ window 是一个抽象类，实现类是 PhoneWindow:
         if (mStateBundle == null) {
             mStateBundle = new Bundle();
         }
-		//调用 Fragment 的 onSaveInstanceState 方法，并调用子 Fragment 的 saveAllState 方法
+        //调用 Fragment 的 onSaveInstanceState 方法，并调用子 Fragment 的 saveAllState 方法
         f.performSaveInstanceState(mStateBundle);
         dispatchOnFragmentSaveInstanceState(f, mStateBundle, false);
         if (!mStateBundle.isEmpty()) {
@@ -236,14 +232,14 @@ window 是一个抽象类，实现类是 PhoneWindow:
         }
 
         if (f.mView != null) {
-			//保存 Fragment 的 View 数据，最终调用到 View 的 saveHierarchyState，和前面保存 Activity 的 View 一样。
+            //保存 Fragment 的 View 数据，最终调用到 View 的 saveHierarchyState，和前面保存 Activity 的 View 一样。
             saveFragmentViewState(f);
         }
         if (f.mSavedViewState != null) {
             if (result == null) {
                 result = new Bundle();
             }
-			//将上面保存的 View 的数据保存到 Bundle 中
+            //将上面保存的 View 的数据保存到 Bundle 中
             result.putSparseParcelableArray(
                     FragmentManagerImpl.VIEW_STATE_TAG, f.mSavedViewState);
         }
@@ -261,9 +257,9 @@ window 是一个抽象类，实现类是 PhoneWindow:
 我们可以看出，saveAllState() 方法会像 Activity 那样，保存 Fragment 中 View 数的状态。
 
 
-> onSaveInstanceState 是如何被调用的？    
+> **onSaveInstanceState 是如何被调用的？**    
 
-**我们首先来看看 Activity 在 pause 的时候会不会调用 onSaveInstanceState 方法：**    
++ **我们首先来看看 Activity 在 pause 的时候会不会调用 onSaveInstanceState 方法：**    
 ```java
     final Bundle performPauseActivity(ActivityClientRecord r, boolean finished,
             boolean saveState, String reason) {
@@ -313,8 +309,7 @@ window 是一个抽象类，实现类是 PhoneWindow:
             return false;
         }
 ```
-只要 targetSdk < 11 就返回 true。那么意思就是只要没有调用 finish() 方法，则不会调用 callCallActivityOnSaveInstanceState 方法。    
-再来看 callCallActivityOnSaveInstanceState() 方法:    
+只要 targetSdk < 11 就返回 true。那么意思就是只要没有调用 finish() 方法，则不会调用 callCallActivityOnSaveInstanceState 方法。      
 
 ``` java
     private void callCallActivityOnSaveInstanceState(ActivityClientRecord r) {
@@ -346,7 +341,7 @@ final void performSaveInstanceState(Bundle outState) {
 ```
 总结：只有在 andriod 3.0 之前并且没有调用 finish() 才会在 onPause 之前执行 onSavedInstanceState 方法。
 
-**下面来看看 Activity 在 stop 的时候会不会调用 onSaveInstanceState 方法：**    
++ **下面来看看 Activity 在 stop 的时候会不会调用 onSaveInstanceState 方法：**    
 在 Activity 执行 onStop 时会调用到 ActivityThread 中的 handleStopActivity() 方法，最终会调用到：
 ```java
     private void performStopActivityInner(ActivityClientRecord r,
@@ -388,7 +383,7 @@ final void performSaveInstanceState(Bundle outState) {
 ```
 在 handleStopActivity 里 saveState 直接为 true，那么就会执行。 
 
-**下面再来看看为什么点击返回是不会执行 onSaveInstanceState 方法：**    
++ **下面再来看看为什么点击返回是不会执行 onSaveInstanceState 方法：**    
 ```java
     public void finishAfterTransition() {
         if (!mActivityTransitionState.startExitBackTransition(this)) {

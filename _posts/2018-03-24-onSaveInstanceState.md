@@ -23,7 +23,8 @@ tags:
 
 如果是用户点击 back，或者主动调用 finish 方法来关闭 Activity，而不是 Activity 进入后台后被杀掉的话，是不会调用的。
 
-> onRestoreInstanceState
+> onRestoreInstanceState    
+
 在 Activity 被系统销毁后，恢复 Activity 时会调用。
 
 可以看出 onSaveInstanceState 方法 和 onRestoreInstanceState 方法并不是成对出现的。    
@@ -42,7 +43,7 @@ onSaveInstanceState 出现在 onStop 或 onPause 之前，onRestoreInstanceState
 
 -----------------------
 ## 源码解析
-### 我们首先来看看 Activity 在 pause 的时候会不会调用 onSaveInstanceState 方法
+**我们首先来看看 Activity 在 pause 的时候会不会调用 onSaveInstanceState 方法：**    
 ```java
     final Bundle performPauseActivity(ActivityClientRecord r, boolean finished,
             boolean saveState, String reason) {
@@ -82,7 +83,7 @@ onSaveInstanceState 出现在 onStop 或 onPause 之前，onRestoreInstanceState
         return !r.activity.mFinished && saveState ? r.state : null;
     }
 ```
-在 PerformPauseActivity 的时候，会调用 callCallActivityOnSaveInstanceState()。但是有一个条件 `r.activity.mFinished && saveState`。mFinished 值只有当调用了 finishi() 方法才会为 true。而 saveState 是由下面这个函数来决定的：    
+在 PerformPauseActivity 的时候，会调用 callCallActivityOnSaveInstanceState()。但是有一个条件 `r.activity.mFinished && saveState`。mFinished 值只有当调用了 finish() 方法才会为 true。而这里刚调用 onPause 方法，所以 mFinished 为 false。那么只有 saveState 返回 true 才会执行该方法。 saveState 是由下面这个函数来决定的：    
 ```java
         public boolean isPreHoneycomb() {
             if (activity != null) {
@@ -92,7 +93,7 @@ onSaveInstanceState 出现在 onStop 或 onPause 之前，onRestoreInstanceState
             return false;
         }
 ```
-只要 targetSdk < 11 就返回 true。那么意思就是只要没有调用 finish() 方法，则会调用 callCallActivityOnSaveInstanceState 方法。    
+只要 targetSdk < 11 就返回 true。那么意思就是只要没有调用 finish() 方法，则不会调用 callCallActivityOnSaveInstanceState 方法。    
 再来看 callCallActivityOnSaveInstanceState() 方法:    
 
 ``` java
@@ -123,9 +124,9 @@ final void performSaveInstanceState(Bundle outState) {
         mActivityTransitionState.saveState(outState);  
     }  
 ```
-我们看到这样就调用到了 activity 的 onSaveInstanceState 方法。即如果没有调用 finish() 方法的话，onSaveInstanceState() 方法会在 onPause() 之前调用。
+总结：只有在 andriod 3.0 之前并且没有调用 finish() 才会在 onPause 之前执行 onSavedInstanceState 方法。
 
-### 下面来看看 Activity 在 stop 的时候会不会调用 onSaveInstanceState 方法
+**下面来看看 Activity 在 stop 的时候会不会调用 onSaveInstanceState 方法：**    
 在 Activity 执行 onStop 时会调用到 ActivityThread 中的 handleStopActivity() 方法，最终会调用到：
 ```java
     private void performStopActivityInner(ActivityClientRecord r,
@@ -156,3 +157,23 @@ final void performSaveInstanceState(Bundle outState) {
 		}
     }
 ```
+可以看出和 pause 一样，这个函数的调用取决于 mFinisheded 和 saveState 决定，不同的是：
+```java
+    private void handleStopActivity(IBinder token, boolean show, int configChanges, int seq) {
+		...
+        StopInfo info = new StopInfo();
+        performStopActivityInner(r, info, show, true, "handleStopActivity");
+		...
+    }
+```
+在 handleStopActivity 里 saveState 直接为 true，那么就会执行。 
+
+**下面再来看看为什么点击返回是不会执行 onSaveInstanceState 方法：**    
+```java
+    public void finishAfterTransition() {
+        if (!mActivityTransitionState.startExitBackTransition(this)) {
+            finish();
+        }
+    }
+```
+点击 back 键会触发 onBackPressed 最终会调用到 finish() 方法，将 mFinished 设置为 true，所以这种间接调用 finish() 方法也是不会调用 onSaveInstanceState 方法的。

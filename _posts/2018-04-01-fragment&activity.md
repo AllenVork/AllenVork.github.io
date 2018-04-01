@@ -20,7 +20,6 @@ tags:
 
 ## Adding a fragment to an activity
 + Declare the fragment inside the activity's layout file    
-
 ```xml    
 <LinearLayout>
     <fragment android:name="com.example.news.ArticleListFragment"
@@ -32,7 +31,7 @@ tags:
 当系统创建 Activity 的 layout 时，它初始化 layout 中的 Fragment 并且调用 onCreateView() 来获取每一个 Fragment 的 layout。系统会将 Fragment 返回的 View 直接替换 <Fragment> 标签。    
 **Note:**每个 Fragment 都要设置一个唯一标志（通过 android:id 或 android:tag 指定)，这样当 activity 重新启动时系统个就能恢复 fragment。    
 
-+ Or, programmatically add the fragment to an existing ViewGroup.    
++ Or, programmatically add the fragment to an existing ViewGroup    
 ```java
 //创建 Fragment
 ExampleFragment fragment = new ExampleFragment();

@@ -29,7 +29,7 @@ tags:
 </LinearLayout>
 ```
 当系统创建 Activity 的 layout 时，它初始化 layout 中的 Fragment 并且调用 onCreateView() 来获取每一个 Fragment 的 layout。系统会将 Fragment 返回的 View 直接替换 <Fragment> 标签。    
-**Note:**每个 Fragment 都要设置一个唯一标志（通过 android:id 或 android:tag 指定)，这样当 activity 重新启动时系统个就能恢复 fragment。
+**Note:**每个 Fragment 都要设置一个唯一标志（通过 android:id 或 android:tag 指定)，这样当 activity 重新启动时系统个就能恢复 fragment。    
 
 + Or, programmatically add the fragment to an existing ViewGroup.
 ```java
@@ -52,7 +52,8 @@ Activity 提供 getSupportFragmentManager() 获得 FragmentManager 来管理 Fra
 + 获得 Activity 中的 Fragment： findFragmentById() (获得在 Activity 的 layout 中提供了 UI 的 Fragment) or findFragmentByTag() (获得提供或没提供 UI 的 Fragment)。
 + 通过 popBackStack() 将 Fragment pop 出栈。
 + 通过 addOnBackStackChangedListener() 注册监听器来监听 back stack 变化。
-详情可以查阅 [FragmentManager](https://developer.android.com/reference/android/support/v4/app/FragmentManager.html) 文档。    
+详情可以查阅 [FragmentManager](https://developer.android.com/reference/android/support/v4/app/FragmentManager.html) 文档。       
+
 上面的示例中，我们看到 FragmentManager 还可以打开 FragmentTransaction 来添加和移除 Fragment。    
 
 ## FragmentTransaction

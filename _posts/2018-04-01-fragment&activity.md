@@ -20,7 +20,8 @@ tags:
 
 ## Adding a fragment to an activity
 + Declare the fragment inside the activity's layout file    
-```    
+
+```xml    
 <LinearLayout>
     <fragment android:name="com.example.news.ArticleListFragment"
     android:id="@+id/viewer"/>

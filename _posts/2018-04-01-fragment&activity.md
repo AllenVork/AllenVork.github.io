@@ -19,7 +19,8 @@ tags:
 + 初始化时，Activity 要先于 Fragment 调用，销毁时相反。如  Activity 的 onStart, onResume 要 “先于” Fragment（当然这得看 activity 在什么时候去添加 Fragment)。而 onPause -> onDestroy 则是 Fragment 要先于 activity 调用。这很好理解，Fragment 是 Activity 的子元素，所以当然要先创建 Activity 才能添加 Fragment。而销毁时，要将 Activity 里的东西销毁才能销毁自己（否则 Activity 销毁了，但 Fragment 还没销毁，导致 Fragment 里使用 activity 的方法就会 crash)。
 
 ## Adding a fragment to an activity
-+ Declare the fragment inside the activity's layout file    
++ Declare the fragment inside the activity's layout file
+
 ```xml    
 <LinearLayout>
     <fragment android:name="com.example.news.ArticleListFragment"
@@ -32,6 +33,7 @@ tags:
 **Note:**每个 Fragment 都要设置一个唯一标志（通过 android:id 或 android:tag 指定)，这样当 activity 重新启动时系统个就能恢复 fragment。    
 
 + Or, programmatically add the fragment to an existing ViewGroup    
+
 ```java
 //创建 Fragment
 ExampleFragment fragment = new ExampleFragment();

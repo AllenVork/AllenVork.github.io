@@ -47,7 +47,7 @@ class MainActivity : AppCompatActivity() {
 ![]({{site.url}}/img/android/basic/memoryleaks/selectclass.png)
 
 右键点击泄漏的类，选中 `Merge Shortest Paths to GC Roots`,然后点击 `exclude all phantom/weak/soft etc. references` （将可以被 GC 回收的对象排除掉）来查看一个对象到 GC Roots 的引用链。Java 是通过可达性(Reachability Analysis)来判断对象是否存活，它通过一系列被称为 "GC Roots" 的对象作为起始点，从这些节点向下搜索，搜索所走的路径被称为引用链。如果该对象到 Gc Roots 没有引用链相连，那么该对象则是可回收对象，否则就不能被回收。    
-除了使用 `merge Shortest Paths to GC Roots` 外，我们还可以右键选中泄漏的 Activity 选择 `List objects` 会出现 with incoming reference (内部引用) 和 with outcoming reference (外部引用)。 然后点击 `with incoming reference` 看该 Activity 的引用路径。    
+除了使用 `merge Shortest Paths to GC Roots` 外，我们还可以右键选中泄漏的 Activity 选择 `List objects` 会出现 with incoming reference (内部引用) 和 with outcoming reference (外部引用)。 然后点击 `with incoming reference` 看该 Activity 的引用路径。然后右键点击该类，选择 `Path To Gc Roots` -> `exclude all phantom/weak/soft etc. references` 即可。       
 
 我们可以看到是 LeakThread 持有了 MainActivity 的引用造成内存泄漏的。
 

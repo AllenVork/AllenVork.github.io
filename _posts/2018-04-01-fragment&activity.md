@@ -3,7 +3,7 @@ layout:     post
 title:      Fragment
 subtitle:   
 author:     Allen Vork
-header-img: 
+header-img: img/post-bg-universe.jpg
 catalog: true
 tags:
     - android

@@ -2,7 +2,7 @@
 layout:     post
 title:      判断应用被强杀
 subtitle:   
-header-img: img/post-bg-universe.jpg
+header-img: img/colorful.jpg
 author:     Allen Vork
 catalog: true
 tags:

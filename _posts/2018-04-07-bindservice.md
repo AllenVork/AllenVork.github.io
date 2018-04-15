@@ -2,7 +2,7 @@
 layout:     post
 title:      Bound Services
 subtitle:   
-header-img: img/post-bg-universe.jpg
+header-img: img/wood.png
 author:     Allen Vork
 catalog: true
 tags:

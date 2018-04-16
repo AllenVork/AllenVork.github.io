@@ -6,7 +6,7 @@ header-img: img/pen1.png
 author:     Allen Vork
 catalog: true
 tags:
-    - tool   
+    - tools   
 ---
 
 ## 如何给图片增加一层半透明蒙版

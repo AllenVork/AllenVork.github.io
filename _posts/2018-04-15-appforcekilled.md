@@ -2,7 +2,7 @@
 layout:     post
 title:      判断应用被强杀
 subtitle:   
-header-img: img/yellow.png
+header-img: img/pen1.png
 author:     Allen Vork
 catalog: true
 tags:

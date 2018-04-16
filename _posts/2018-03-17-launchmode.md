@@ -3,7 +3,7 @@ layout:     post
 title:      android 四种启动模式
 subtitle:   主要介绍不同的 task 的 activity 的启动返回问题
 author:     Allen Vork
-header-img: img/post-bg-kuaidi.jpg
+header-img: img/pen1.jpg
 catalog: true
 tags:
     - android

@@ -2,7 +2,7 @@
 layout:     post
 title:      TraceView 解决界面卡顿
 subtitle:   TraceView 找到耗时方法
-header-img: img/post-bg-universe.jpg
+header-img: img/pen1.jpg
 author:     Allen Vork
 catalog: true
 tags:

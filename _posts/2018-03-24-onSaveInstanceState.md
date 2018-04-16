@@ -3,7 +3,7 @@ layout:     post
 title:      onSaveInstanceState 和 onRestoreInstanceState
 subtitle:   
 author:     Allen Vork
-header-img: img/post-bg-kuaidi.jpg
+header-img: img/pen1.jpg
 catalog: true
 tags:
     - android

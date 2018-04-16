@@ -2,7 +2,7 @@
 layout:     post
 title:      memory leaks
 subtitle:   检测与解决内存泄漏
-header-img: img/post-bg-universe.jpg
+header-img: img/pen1.jpg
 author:     Allen Vork
 catalog: true
 tags:

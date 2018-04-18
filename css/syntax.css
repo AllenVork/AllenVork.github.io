@@ -186,5 +186,6 @@
   color: #f92672;
 }
 .highlight {
-	background-color: #000000;
+	background-color: #171717;
+	border-radius: 3px;
 }

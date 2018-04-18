@@ -16,7 +16,6 @@ tags:
 ## 如何判断
 既然强杀后，进入应用只会初始化 Application 和栈顶 Activity，那么我们只需要在 Application 中创建一个静态变量，然后在闪屏页面去修改该值。后面的 Activity 判断如果值被修改了则没有强杀，如果没有被修改说明没有走闪屏页面的流程，说明之前被杀掉了。
 
-{% highlight ruby %}
 ```java
 class MyApplication : Application() {
     companion object {
@@ -24,20 +23,17 @@ class MyApplication : Application() {
     }
 }
 ```
-{% endhighlight %}
 
 创建一个 BaseActivity，将应用是否被杀掉的判断放进去，避免所有的 Activity 都要自行判断
-{% highlight ruby %}
+```java
 open class BaseActivity : AppCompatActivity() {
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (MyApplication.isForceKilled)
             Toast.makeText(this, "Application was force killed", Toast.LENGTH_LONG).show()
     }
 }
-{% endhighlight %}
-
+```
 闪屏页（在每次应用正常启动的时候都会创建，而进程在后台被杀掉是不会创建的： 
 ```java
 class SplashActivity : BaseActivity() {

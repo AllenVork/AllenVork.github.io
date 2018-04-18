@@ -6,7 +6,6 @@ author:     Allen Vork
 header-img: img/pen1.jpg
 catalog: true
 tags:
-    - android
     - android basics    
 ---
 

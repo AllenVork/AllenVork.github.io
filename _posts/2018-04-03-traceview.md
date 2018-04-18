@@ -6,7 +6,6 @@ header-img: img/pen1.jpg
 author:     Allen Vork
 catalog: true
 tags:
-    - android
     - android performance    
 ---
 ## TraceView 是什么

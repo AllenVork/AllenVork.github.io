@@ -6,8 +6,7 @@ header-img: img/pen1.png
 author:     Allen Vork
 catalog: true
 tags:
-    - android
-    - android basic    
+    - android basics    
 ---
 
 ## 原理

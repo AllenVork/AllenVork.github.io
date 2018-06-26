@@ -14,13 +14,16 @@ LinkedHashMap 是将 HashMap 和双向链表相结合的产物，拥有了 HashM
 ![]({{site.url}}/img/android/basic/appforcekilled/dismiss.png)   
 
 ## source code
+我们来看一下比较重要的伪代码（省略了很多类似 clear 之类的代码）：
 ```java
 public class LinkedHashMap<K,V>
     extends HashMap<K,V>
     implements Map<K,V> {
 
     /**
-     * HashMap.Node subclass for normal LinkedHashMap entries.
+     * 重新定义 Node，增加了 before 和 after 用于维护双向链表。
+     * next 用于维护 HashMap 各个桶中的 Entry 的连接顺序；
+     * before 和 after 维护 entry 插入的先后顺序
      */
     static class LinkedHashMapEntry<K,V> extends HashMap.Node<K,V> {
         LinkedHashMapEntry<K,V> before, after;

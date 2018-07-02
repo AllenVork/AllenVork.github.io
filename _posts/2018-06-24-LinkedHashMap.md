@@ -11,8 +11,13 @@ tags:
 
 ## Synopsis
 LinkedHashMap 是将 HashMap 和双向链表相结合的产物，拥有了 HashMap 的特性外还保持了迭代的顺序。LRU Cache 内部就是通过 LinkedHashMap 实现的。
-![]({{site.url}}/img/android/basic/appforcekilled/dismiss.png)   
+![]({{site.url}}/img/android/basic/appforcekilled/aaaa.png)   
 
+## LinkedHashMap 与 HashMap 有什么不同
++ 结点不同    
+LinkedHashMap 的**结点**是继承自 HashMap.Node，并**添加了 before 和 after 指针**，用于维护节点的插入顺序，使得节点形成双向链表。
++ put 操作不同    
+在执行 put 操作后，Entry 都是保存在 HashMap 中的，LinkedHashMap 还会将 Entry 放到链表的尾部。
 ## source code
 我们来看一下比较重要的伪代码（省略了很多类似 clear 之类的代码）：
 ```java
@@ -283,7 +288,5 @@ public class LinkedHashMap<K,V>
         implements Iterator<Map.Entry<K,V>> {
         public final Map.Entry<K,V> next() { return nextNode(); }
     }
-
-
 }
 ```

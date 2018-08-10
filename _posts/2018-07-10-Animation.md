@@ -6,7 +6,7 @@ header-img: img/android3.png
 author:     Allen Vork
 catalog: true
 tags:
-    - Data Structures
+    - android basics  
 ---
 
 ## Synopsis

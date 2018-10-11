@@ -19,9 +19,12 @@ tags:
         mLooper = looper;
         mHandler = new FrameHandler(looper);
 
+        //创建VSYNC的信号接受对象
         mDisplayEventReceiver = USE_VSYNC
                 ? new FrameDisplayEventReceiver(looper, vsyncSource)
                 : null;
+
+        //初始化上一次frame渲染的时间点
         mLastFrameTimeNanos = Long.MIN_VALUE;
 
         // 即：1s/60f = 16.7ms每帧
@@ -64,7 +67,115 @@ tags:
 ```
 可以看出它的实例是由 ThreadLocal 创建的，这样每个线程都有自己独立的 Choreographer。
 
-我们来看下4种 CallbackQueue:
+## Choreographer 使用
+### 添加 Runnable 对象
+在 View 调用 invalidate() 方法后，最终会调到 ViewRootImpl 中并执行 scheduleTraversals() 方法：
+```java
+    public ViewRootImpl(Context context, Display display) {
+        mChoreographer = Choreographer.getInstance();
+    }
+
+    void scheduleTraversals() {
+        if (!mTraversalScheduled) {
+            mTraversalScheduled = true;
+            mTraversalBarrier = mHandler.getLooper().getQueue().postSyncBarrier();
+            mChoreographer.postCallback(
+                    Choreographer.CALLBACK_TRAVERSAL, mTraversalRunnable, null);
+            if (!mUnbufferedInputDispatch) {
+                scheduleConsumeBatchedInput();
+            }
+            notifyRendererOfFramePending();
+            pokeDrawLockIfNeeded();
+        }
+    }
+```
+这里调用了 postCallback 方法将类型为 Choreographer.CALLBACK_TRAVERSAL 的 mTraversalRunnable 传进去了。然后 Choreographer 内部会调用：
+```java
+    public void postFrameCallbackDelayed(FrameCallback callback, long delayMillis) {
+        postCallbackDelayedInternal(CALLBACK_ANIMATION,
+                callback, null, delayMillis);
+    }
+```
+
+### 添加 FrameCallback 对象
+创建一个 FragmeCallback
+```java
+    private class FrameCallback implements Choreographer.FrameCallback {
+        @Override
+        public void doFrame(long frameTimeNanos) {
+            sendEmptyMessage(UPDATE);
+        }
+    };
+```
+然后调用 Choreographer 的方法传进去：
+```java
+    Choreographer.getInstance().postFrameCallback(new FrameCallback());
+```
+然后 Choreographer 内部会调用：
+```java
+    public void postFrameCallbackDelayed(FrameCallback callback, long delayMillis) {
+        postCallbackDelayedInternal(CALLBACK_ANIMATION,
+                callback, FRAME_CALLBACK_TOKEN, delayMillis);
+    }
+```
+
+> 可以看出这添加 Runnable 和 FrameCallback 最终都会调用到 postCallbackDelayedInternal()，不同的是第三个参数 token 一个为空，一个为 FRAME_CALLBACK_TOKEN。 FrameCallback 相当于给 Runnable 中的 run() 方法添加了一个参数。
+
+```java
+    private void postCallbackDelayedInternal(int callbackType,
+            Object action, Object token, long delayMillis) {
+
+        synchronized (mLock) {
+            final long now = SystemClock.uptimeMillis();
+            final long dueTime = now + delayMillis;
+            // 后面会详细讲这个数组
+            mCallbackQueues[callbackType].addCallbackLocked(dueTime, action, token);
+
+            if (dueTime <= now) {
+                scheduleFrameLocked(now);
+            } else {
+                Message msg = mHandler.obtainMessage(MSG_DO_SCHEDULE_CALLBACK, action);
+                msg.arg1 = callbackType;
+                msg.setAsynchronous(true);
+                mHandler.sendMessageAtTime(msg, dueTime);
+            }
+        }
+    }
+```
+最终它们都会根据类型添加到对应的 mCallbackQueues 中。如果该任务不需要 delay，那么立马执行 scheduleFrameLocked(now)，否则发送一个类型为 MSG_DO_SCHEDULE_CALLBACK 的异步消息。
+
+我们来看看 scheduleFrameLocked:
+```java
+    private void scheduleFrameLocked(long now) {
+        if (!mFrameScheduled) {
+            mFrameScheduled = true;
+            if (USE_VSYNC) { // 使用 VSYNC 信号，这个参数由系统值确定
+                // 如果运行在 Looper 线程则执行 scheduleVsyncLocked() 方法
+                if (isRunningOnLooperThreadLocked()) {
+                    // 请求 VSYNC 信号，它会触发 FrameDisplayEventReceiver 的 onVsync 回调，
+                    // 然后调用 doFrame(long frameTimeNanos, int frame) 方法。该方法后面会详细讲
+                    scheduleVsyncLocked();
+                } else {
+                    // 发送类型为 MSG_DO_SCHEDULE_VSYNC 的消息，最终也会调到上面的 scheduleVsyncLocked()
+                    Message msg = mHandler.obtainMessage(MSG_DO_SCHEDULE_VSYNC);
+                    msg.setAsynchronous(true);
+                    mHandler.sendMessageAtFrontOfQueue(msg);
+                }
+            } else {
+                final long nextFrameTime = Math.max(
+                        mLastFrameTimeNanos / TimeUtils.NANOS_PER_MS + sFrameDelay, now);
+                // 发送 MSG_DO_FRAME 消息，它会调用 doFrame(long frameTimeNanos, int frame) 方法
+                Message msg = mHandler.obtainMessage(MSG_DO_FRAME);
+                msg.setAsynchronous(true);
+                mHandler.sendMessageAtTime(msg, nextFrameTime);
+            }
+        }
+    }
+```
+可以看出，如果是使用 VSYNC 信号，那么当它运行在 Looper 线程的话，会调用 scheduleVsyncLocked() 方法来触发 FrameDisplayEventReceiver 的 onVsync 回调，从而调到 doFrame() 方法中，否则发送一个 MSG_DO_SCHEDULE_VSYNC 消息。如果不适用 VSYNC 信号，则会发送一个 MSG_DO_FRAME 消息。
+
+## CallbackQueue
+前面我们传给 Choreographer 的 Runnable 和 FrameCallback 都会添加到 CallbackQueue 中，构造函数中会创建容量为4的 CallbackQueue 数组来存放4种不同的 Callback，我们来看下这4种 CallbackQueue:
 ```java
    /**
      * Must be kept in sync with CALLBACK_* ints below, used to index into this array.
@@ -93,16 +204,6 @@ tags:
      */
     public static final int CALLBACK_TRAVERSAL = 2;
 
-    /**
-     * Callback type: Commit callback.  Handles post-draw operations for the frame.
-     * Runs after traversal completes.  The {@link #getFrameTime() frame time} reported
-     * during this callback may be updated to reflect delays that occurred while
-     * traversals were in progress in case heavy layout operations caused some frames
-     * to be skipped.  The frame time reported during this callback provides a better
-     * estimate of the start time of the frame in which animations (and other updates
-     * to the view hierarchy state) actually took effect.
-     * @hide
-     */
     public static final int CALLBACK_COMMIT = 3;
 ```
 可以看出这4种 Callback 分别是:    
@@ -188,7 +289,7 @@ tags:
         }
     }
 ```
-可以看出这个类是个链表，提供了添加，删除，读取操作。
+可以看出这个类里面会存放一个链表的头结点，并提供了添加，删除，读取来操作该链表。
 ```java
     private static final class CallbackRecord {
         public CallbackRecord next; // 下一个结点
@@ -205,7 +306,10 @@ tags:
         }
     }
 ```
-链表的结点的结构比较简单，注释里讲的比较清楚。我们来看另一个内部类：    
+链表的结点的结构比较简单，注释里讲的比较清楚。前面在我们注册 Runnable 之类的时，会调用到 mCallbackQueues[callbackType].addCallbackLocked(dueTime, action, token)，也就是将该 Runnalbe 存放到相应类型的 CallbackQueue 中的链表的相应位置。
+
+## FrameDisplayEventReceiver
+前面讲过，当调用 postCallback() 将 Runnable 等传进来时，如果该 Runnable 等没有设置 delay，则会调用 scheduleVsyncLocked() 来请求 VSYNC 信号，接收到信号时就会触发它的 onVsync：    
 ```java
     private final class FrameDisplayEventReceiver extends DisplayEventReceiver
             implements Runnable {
@@ -240,7 +344,7 @@ tags:
         }
     }
 ```
-可以看出 FrameDisplayEventReceiver 是用于接收垂直同步信号的，接收到之后就发送一个消息，然后会执行 runnable，从而调用 doFrame()。
+接收到垂直同步信号后就会将自己作为 Runnable 发送出去，然后会调用它的 run 方法从而调用 doFrame()。
 ```java
     void doFrame(long frameTimeNanos, int frame) {
         final long startNanos;
@@ -251,10 +355,10 @@ tags:
 
             long intendedFrameTimeNanos = frameTimeNanos;
             startNanos = System.nanoTime();
-            // 用当前时间减去接收到刷新信号的时间计算出时间间隔
+            // 抖动间隔：用当前时间减去接收到刷新信号的时间计算出时间间隔
             final long jitterNanos = startNanos - frameTimeNanos;
 
-            // 间隔大于16.7ms时就说明出现了掉帧
+            // 抖动间隔大于16.7ms时就说明出现了掉帧
             if (jitterNanos >= mFrameIntervalNanos) {
                 // 掉帧次数
                 final long skippedFrames = jitterNanos / mFrameIntervalNanos;
@@ -351,9 +455,16 @@ doFrame 所做的事情就是计算当前时间与接收到信号的时间，如
         }
     }
 ```
-首先取出执行时间在当前时间之前部分的 CallbackRecord，然后遍历该链表并执行。
-
-
+首先取出执行时间在当前时间之前部分的 CallbackRecord，然后遍历该链表并执行 callback 的 run 方法:
+```java
+        public void run(long frameTimeNanos) {
+            if (token == FRAME_CALLBACK_TOKEN) {
+                ((FrameCallback)action).doFrame(frameTimeNanos);
+            } else {
+                ((Runnable)action).run();
+            }
+        }
+```
 
 我们来看下 FrameHandler 是处理什么消息的：
 ```java
@@ -365,20 +476,20 @@ doFrame 所做的事情就是计算当前时间与接收到信号的时间，如
         @Override
         public void handleMessage(Message msg) {
             switch (msg.what) {
-                case MSG_DO_FRAME:
-                    doFrame(System.nanoTime(), 0);
+                case MSG_DO_FRAME: // 前面已经讲过，用于执行4种 Callback 的
+                    doFrame(System.nanoTime(), 0); 
                     break;
-                case MSG_DO_SCHEDULE_VSYNC:
+                case MSG_DO_SCHEDULE_VSYNC: // 这个前面讲过，用于请求 VSYNC 信号，信号到达后调用 doFrame()
                     doScheduleVsync();
                     break;
-                case MSG_DO_SCHEDULE_CALLBACK:
+                case MSG_DO_SCHEDULE_CALLBACK: // 这个会调到 scheduleFrameLocked（）前面讲过
                     doScheduleCallback(msg.arg1);
                     break;
             }
         }
     }
 ```
-
+可以看出，FrameHandler 真正是做2件事，直接执行 doFrame() 来执行那4种 Callback，要么请求 VSYNC 信号，然后在下个信号到来时调用 doFrame()。
 
 
 
@@ -388,3 +499,4 @@ doFrame 所做的事情就是计算当前时间与接收到信号的时间，如
 ## 参考文献
 + [android 动画系列 (2) - interpolator 插值器](https://www.jianshu.com/p/48317612c164)   
 + [模拟自然动画的精髓——TimeInterpolator与TypeEvaluator](https://www.jianshu.com/p/b239d14060a8) 
++ [](https://juejin.im/entry/5ae1a4aef265da0b7e0bf94a)

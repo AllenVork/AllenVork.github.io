@@ -497,6 +497,6 @@ doFrame 所做的事情就是计算当前时间与接收到信号的时间，如
 
 
 ## 参考文献
-+ [android 动画系列 (2) - interpolator 插值器](https://www.jianshu.com/p/48317612c164)   
-+ [模拟自然动画的精髓——TimeInterpolator与TypeEvaluator](https://www.jianshu.com/p/b239d14060a8) 
++ [Android系统的编舞者Choreographer](https://www.jianshu.com/p/fb645ea98474)   
++ [Android Choreographer](https://blog.csdn.net/ahence/article/details/78417186) 
 + [](https://juejin.im/entry/5ae1a4aef265da0b7e0bf94a)

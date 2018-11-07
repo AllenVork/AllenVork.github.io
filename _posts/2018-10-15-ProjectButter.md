@@ -22,10 +22,10 @@ Google 在 Android4.1 提出了 Project Butter 用于提升系统流畅度。Pro
 绘图速度过慢的时候，同一帧在屏幕上至少出现2次。
 
 ## Solutions
-### tearing
+### 1.tearing
 撕裂的原因是 display 还没来得及读 buffer 就被重写了，那么就可以准备2个 buffer 即**双缓冲**。back buffer 用于 CPU/GPU 后台绘制，frame buffer 用于显示。back buffer 准备好后才可以交换，这样就可以避免撕裂问题。但是此时屏幕还没有完整显示上一帧的内容时是不能交换的。那么只有等屏幕处理完成当前帧才能进行交换操作。当扫描完一屏后，会回到第一行进入下一次的循环，中间会有一段空隙（VBI），这个空隙为缓冲区交换的最佳时间。VSYNC 就是利用这个空隙出现的垂直刷新脉冲来保证双缓冲的最佳时间点。
 
-### jank
+### 2.jank
 我们来看下在双缓冲下，没有 VSYNC 的情况：
 ![]({{site.url}}/img/android/basic/performance/ProjectButter/1.webp)
 Display 为显示屏， VSYNC 仅仅指双缓冲的交换。我们来看下将会发生的异常：
@@ -43,6 +43,17 @@ Display 为显示屏， VSYNC 仅仅指双缓冲的交换。我们来看下将�
 因为设备不能升级硬件，我们无法改变 CPU/GPU 渲染的时间，那么第一次 Jank 是无法避免的。我们重点关注 CPU 第一次和第二次执行中间浪费的时间。当第1次信号到来时，由于 GPU 占用了 B，导致屏幕会一直占用 A。两个缓冲区都被占用了，即使此时 CPU 是空闲的，它也没有办法处理下一帧的数据。如果增加一个 buffer,会不会有所改善？
 ![]({{site.url}}/img/android/basic/performance/ProjectButter/5.webp)
 当第一个信号到来时，A、B 都被占用，此时 CPU 开始使用 C 缓冲区来处理下一帧数据。之前第二次发生的 Jank 就避免了。有效的降低了显示错误的几率。可以看出双缓冲和三重缓冲都会有 lag（延时）问题。C 缓冲区延时了16ms才显示。
+
+## 渲染过程CPU和GPU的分工
+我们知道，渲染的过程需要2个核心组件：CPU 和 GPU。
++ CPU：负责 Measure、Layout、Record、Execute 的计算操作。
++ GPU：负责 Rasterization（栅格化）操作
+
+![]({{site.url}}/img/android/basic/performance/ProjectButter/6.webp)
+CPU 负责把 UI组件计算成 Polygons（多边形）和 Texture（纹理），然后交给 GPU 进行栅格化。
+![]({{site.url}}/img/android/basic/performance/ProjectButter/7.webp)
+GPU 的栅格化过程是绘制 Button、Shape、Path、String、Bitmap 等组件最基础的操作。它将这些组件拆分到不同的像素中显示，这是一个耗时操作，GPU 的引入就是为了加快栅格化。    
+每次从个CPU 转移到 GPU 是一件很麻烦的事，所幸的是 OpenGL ES 可以将需要渲染的纹理 hold 在 GPU Memory 中，在下次需要渲染的时候直接进行操作。    
 
 ## References
 + [Android丢帧分析与优化](https://www.jianshu.com/p/989ce9eb7af8)    

@@ -46,3 +46,6 @@ Display 为显示屏， VSYNC 仅仅指双缓冲的交换。我们来看下将�
 
 ## References
 + [Android丢帧分析与优化](https://www.jianshu.com/p/989ce9eb7af8)    
++ [Android App性能评测分析－流畅度篇](https://www.jianshu.com/p/642f47989c7c)
++ [Android性能优化之渲染篇](https://www.jianshu.com/p/0cb06877cf2a)
++ [Android的16ms和垂直同步以及三重缓存](https://www.jianshu.com/p/3750db831aca)

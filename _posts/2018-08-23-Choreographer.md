@@ -1,12 +1,12 @@
 ---
 layout:     post
-title:      android 屏幕刷新
+title:      Choreographer
 subtitle:   
 header-img: img/android3.png
 author:     Allen Vork
 catalog: true
 tags:
-    - android basics  
+    - performance
 ---
 
 ## Synopsis
@@ -91,9 +91,8 @@ tags:
 ```
 这里调用了 postCallback 方法将类型为 Choreographer.CALLBACK_TRAVERSAL 的 mTraversalRunnable 传进去了。然后 Choreographer 内部会调用：
 ```java
-    public void postFrameCallbackDelayed(FrameCallback callback, long delayMillis) {
-        postCallbackDelayedInternal(CALLBACK_ANIMATION,
-                callback, null, delayMillis);
+    public void postCallbackDelayed(FrameCallback callback, long delayMillis) {
+        postCallbackDelayedInternal(callbackType, action, token, delayMillis)
     }
 ```
 
@@ -119,7 +118,7 @@ tags:
     }
 ```
 
-> 可以看出这添加 Runnable 和 FrameCallback 最终都会调用到 postCallbackDelayedInternal()，不同的是第三个参数 token 一个为空，一个为 FRAME_CALLBACK_TOKEN。 FrameCallback 相当于给 Runnable 中的 run() 方法添加了一个参数。
+> 可以看出这添加 Runnable 和 FrameCallback 最终都会调用到 postCallbackDelayedInternal()，注意第三个参数 token 一个为空，一个为 FRAME_CALLBACK_TOKEN。 FrameCallback 其实相当于给 Runnable 中的 run() 方法添加了一个参数。
 
 ```java
     private void postCallbackDelayedInternal(int callbackType,
@@ -491,6 +490,127 @@ doFrame 所做的事情就是计算当前时间与接收到信号的时间，如
 ```
 可以看出，FrameHandler 真正是做2件事，直接执行 doFrame() 来执行那4种 Callback，要么请求 VSYNC 信号，然后在下个信号到来时调用 doFrame()。
 
+## Sample
+![]({{site.url}}/img/android/basic/performance/ProjectButter/9.png)
++ 1.调用 postCallBack(runnable) ，它会调用
+```java
+    private void postCallbackDelayedInternal(int callbackType,
+            Object action, Object token, long delayMillis) {
+
+        synchronized (mLock) {
+            final long now = SystemClock.uptimeMillis();
+            final long dueTime = now + delayMillis;
+            // 将 action 添加到 mCallbackQueues 中
+            mCallbackQueues[callbackType].addCallbackLocked(dueTime, action, token);
+
+            if (dueTime <= now) {
+                scheduleFrameLocked(now);
+            } else {
+                Message msg = mHandler.obtainMessage(MSG_DO_SCHEDULE_CALLBACK, action);
+                msg.arg1 = callbackType;
+                msg.setAsynchronous(true);
+                mHandler.sendMessageAtTime(msg, dueTime);
+            }
+        }
+    }
+```
+然后会调用到 scheduleFrameLocked() 方法：
+```java
+    private void scheduleFrameLocked(long now) {
+        if (!mFrameScheduled) {
+            mFrameScheduled = true;
+            if (USE_VSYNC) {
+                if (isRunningOnLooperThreadLocked()) {
+                    scheduleVsyncLocked();
+                }
+                ...
+            }
+        }
+    }
+```
+此时就会调用到 scheduleVsyncLocked() 方法，该方法是用来监听 VSYNC 信号的。    
++ 2.frameTimeNanos1 时刻收到 VSync 信号：
+```java
+    private final class FrameDisplayEventReceiver extends DisplayEventReceiver
+            implements Runnable {
+        ...
+
+        @Override
+        public void onVsync(long timestampNanos, int builtInDisplayId, int frame) {
+            ...
+            mTimestampNanos = timestampNanos;
+            mFrame = frame;
+            Message msg = Message.obtain(mHandler, this);
+            msg.setAsynchronous(true);
+            mHandler.sendMessageAtTime(msg, timestampNanos / TimeUtils.NANOS_PER_MS);
+        }
+
+        @Override
+        public void run() {
+            mHavePendingVsync = false;
+            doFrame(mTimestampNanos, mFrame);
+        }
+    }
+```
+它会发送一个消息，然后执行 run() 方法来触发 doFrame()。doFrame() 会判断是否有掉帧，然后执行传进来的所有应该执行的 runnable。
++ 3.runnable都执行完成后，又调用 postCallback(runnable) ，它会走第一步一样的过程，在 scheduleFrameLocked() 方法中：
+```java
+    private void scheduleFrameLocked(long now) {
+        if (!mFrameScheduled) {
+            mFrameScheduled = true;
+        }
+    }
+``` 
+将 mFrameScheduled 设为 true。然后调用 scheduleVsyncLocked() 来监听下一帧的信号
++ 4.这时又执行了一次 postCallback(runnable)，将 runnable 放到 mCallbackQueues，由于 mFrameScheduled 之前被设为 true，所以走到 scheduleFrameLocked 将不做任何事。    
++ 5.当 frameTimeNanos2 时刻接收到 VSYNC 信号时，由于 CPU 被占用（上图的黄色部分），就没有立即回调 onVsync 方法。虽然稍微延时，但并没有超过16ms，所以没有掉帧。它同样是发送消息到主线程，然后执行 doFrame() 方法来执行所有小于当前时间的 runnable。
++ 6.在非 UI 线程再次调用 postCallback(runnable) ，由于 Choreographer 为线程单例，所以当前的 Choreographer 为新的实例, mFrameScheduled 为 false:
+```java
+    private void scheduleFrameLocked(long now) {
+        if (!mFrameScheduled) {
+            mFrameScheduled = true;
+            if (USE_VSYNC) {
+                if (isRunningOnLooperThreadLocked()) { // 是不是在主线程
+                    scheduleVsyncLocked();
+                } else { // 由于当前是在子线程，所以会执行这里
+                    Message msg = mHandler.obtainMessage(MSG_DO_SCHEDULE_VSYNC);
+                    msg.setAsynchronous(true);
+                    mHandler.sendMessageAtFrontOfQueue(msg);
+                }
+            }
+        }
+    }
+```
+这时它会发个消息到主线程，消息的类型为 MSG_DO_SCHEDULE_VSYNC。可以看到在 frameTimeNanos3 时，runnable 还没执行完，那么这个消息就还不会被处理。由于前面只有在第4步调用了 postCallBack() 会调用监听下一帧信号的回调，从而接收到 frameTimeNanos2 的 VSync 信号，后面都没有触发 scheduleVsyncLocked() 方法来监听下一帧的信号，所以 frameTimeNanos3 不会接收到信号，也就不做任何处理。
++ 7.在 frameTimeNanos3 时间点之后，runnable 执行完了，这时主线程可以处理第6步发送的消息了：
+```java
+    private final class FrameHandler extends Handler {
+
+        @Override
+        public void handleMessage(Message msg) {
+            switch (msg.what) {
+                case MSG_DO_FRAME:
+                    doFrame(System.nanoTime(), 0);
+                    break;
+                case MSG_DO_SCHEDULE_VSYNC:
+                    doScheduleVsync(); // 设置监听 VSYNC 信号
+                    break;
+                case MSG_DO_SCHEDULE_CALLBACK:
+                    doScheduleCallback(msg.arg1);
+                    break;
+            }
+        }
+    }
+```
+它调用 doScheduleVsync() 来监听下一帧的信号。
++ 8.当 frameTimeNanos4 信号到来时，它同样是向主线程发送一个消息。由于此时 CPU 一致被占用，fameTimeNanos5 到来时，CPU 一直被占用，那么就无法处理消息。在 fameTimeNanos5 时间点之后就会处理 VSync 信号，然后执行 doFrames()。可以看出第四个红箭头传进来的 runnable 本应在 frameTimeNanos3 处理，但是被延时到了 frameTimeNanos5 之后，也就是中间调了2帧，那么 doFrame 方法就会修正 frameTimeNanos 为 frameTimeNanos5，然后执行 runnable。
+
+
+
+
+
+
+
 
 
 
@@ -499,4 +619,6 @@ doFrame 所做的事情就是计算当前时间与接收到信号的时间，如
 ## 参考文献
 + [Android系统的编舞者Choreographer](https://www.jianshu.com/p/fb645ea98474)   
 + [Android Choreographer](https://blog.csdn.net/ahence/article/details/78417186) 
-+ [](https://juejin.im/entry/5ae1a4aef265da0b7e0bf94a)
++ [Android系统的编舞者Choreographer](https://juejin.im/entry/5ae1a4aef265da0b7e0bf94a)
++ [Android Choreographer 源码分析](https://www.jianshu.com/p/996bca12eb1d)
++ [](https://www.jianshu.com/p/dd32ec35db1d)

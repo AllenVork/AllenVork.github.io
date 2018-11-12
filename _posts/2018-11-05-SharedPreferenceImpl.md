@@ -489,6 +489,7 @@ commit 操作就是将 put 到 mModified 中的数据存放到 mMap 中。来看
                     }
                 };
 
+            // 产生 ANR 的关键
             QueuedWork.addFinisher(awaitCommit);
 
             // 这个 runnable 就是为了执行上面的 awaitCommit Runnable，从而调用 mcr.writtenToDiskLatch.await()
@@ -634,11 +635,31 @@ public class QueuedWork {
         } finally {
             StrictMode.setThreadPolicy(oldPolicy);
         }
+
+        try {
+            while (true) {
+                Runnable finisher;
+
+                // 将前面 apply() 放进来的封装有 mcr.writtenToDiskLatch.await() 的 runnalbe 取出来
+                synchronized (sLock) {
+                    finisher = sFinishers.poll();
+                }
+
+                if (finisher == null) {
+                    break;
+                }
+                // 在当前线程等待，导致 ANR
+                finisher.run();
+            }
+        } finally {
+            sCanDelay = true;
+        }
     }
 
     private static void processPendingWork() {
         long startTime = 0;
 
+        // 当 下面的 run 方法没执行完，则会一直等它执行完
         synchronized (sProcessingWork) {
             LinkedList<Runnable> work;
 
@@ -658,8 +679,133 @@ public class QueuedWork {
         }
     }
 ```
-可以看出 waitToFinish 是直接在调用该方法的线程中执行写硬盘的 runnable 方法，而它是在 ActivityThread.handleStopActivity 中执行的，不是像直接调用 apply() 方法那样，会发送消息到 HanderThread 中执行。所以问题就是 Activity 在 stop 的时候要在当前线程执行完所有的 runnable 导致 ANR。
+可以看出 waitToFinish 会一直等待 run 方法执行完，所以虽然 run 是在 HandlerThread 中执行的，它依然会阻塞主线程。所以问题就是 Activity 在 stop 的时候要在当前线程等待子线程中所有的 runnable 执行完成导致 ANR。
+
+## solution
++ 直接异步调用 commit() 方法，这样就不会调用 apply() 的 QueuedWork.addFinisher(awaitCommit)，那么 sFinishers 就为空，当 ActivityThread 调用 pause 之类的方法时，也不会在主线程等待写入操作完成。
++ 手动清空 sFinishers 中的 Runnable:    
+```java
+/**
+ * 摘自文末的引用
+ */
+public static void tryHookActityThreadH() {
+    boolean hookSuccess = false;
+    try {
+        Class activityThread = Class.forName("android.app.ActivityThread");
+        Method mH = ReflectionCache.build().getMethod(activityThread, "currentActivityThread");
+        if (mH != null) {
+            Object obj = mH.invoke(activityThread);
+            if (obj != null) {
+                Handler handler = (Handler) ReflectHelper.getField(obj, "mH");
+                if (handler != null) {
+                    Field mCallbackField = ReflectionCache.build().getDeclaredField(Class.forName("android.os.Handler"), "mCallback");
+                    if (mCallbackField != null) {
+                        mCallbackField.setAccessible(true);
+                        ActivityThreadHCallbackProxy activityThreadHandler = new ActivityThreadHCallbackProxy((Handler.Callback) mCallbackField.get(handler));
+                        mCallbackField.set(handler, activityThreadHandler);
+                        hookSuccess = true;
+                    }
+                }
+            }
+        }
+    } catch (Exception e) {
+        Mlog.tag(TAG).i("HookActityThreadH:{}", e.getLocalizedMessage());
+    }
+    Mlog.tag(TAG).i("HookActityThreadH:{}", hookSuccess);
+}
+
+
+public class ActivityThreadHCallbackProxy implements Handler.Callback {
+
+    public static final String TAG = "ActivityThreadHCallbackProxy";
+    /**
+    * {@link ActivityThread#H}
+    */
+        public static final int PAUSE_ACTIVITY          = 101;
+        public static final int PAUSE_ACTIVITY_FINISHING= 102;
+        public static final int STOP_ACTIVITY_SHOW      = 103;
+        public static final int STOP_ACTIVITY_HIDE      = 104;
+        public static final int SERVICE_ARGS            = 115;
+        public static final int STOP_SERVICE            = 116;
+        public static final int SLEEPING                = 137;
+
+
+    private Handler.Callback mRawCallback;
+
+    public ActivityThreadHCallbackProxy(Handler.Callback callback) {
+        mRawCallback = callback;
+    }
+
+    @Override
+    public boolean handleMessage(Message message) {
+        switch (message.what) {
+            case STOP_ACTIVITY_HIDE:
+            case STOP_ACTIVITY_SHOW:
+                //stop activity
+                beforeWaitToFinished();
+                break;
+            case SERVICE_ARGS:
+                //SERVICE ARGS
+                beforeWaitToFinished();
+                break;
+            case STOP_SERVICE:
+                //STOP SERVICE
+                beforeWaitToFinished();
+                break;
+
+            case SLEEPING:
+                //SLEEPING
+                beforeWaitToFinished();
+                break;
+            case PAUSE_ACTIVITY:
+            case PAUSE_ACTIVITY_FINISHING:
+                //pause activity
+                beforeWaitToFinished();
+                break;
+            default:
+                break;
+        }
+        if (mRawCallback != null) {
+            mRawCallback.handleMessage(message);
+        }
+        return false;//不能返回true，否则会消耗掉事件
+    }
+
+    private void beforeWaitToFinished() {
+        QuenedWorkProxy.cleanAll();
+    }
+}
+
+public class QuenedWorkProxy {
+    private static final String TAG = "QuenedWorkProxy";
+    private static final String CLASS_NAME = "android.app.QueuedWork";
+    private static final String FILE_NAME_PENDDING_WORK_FINISH = "sPendingWorkFinishers";
+
+    public static Collection<Runnable> sPendingWorkFinishers = null;
+    private static boolean sSupportHook = true;
+
+        /**
+        * 不支持android O
+        * android O变量名改为sFinishers
+        */
+    public static void cleanAll(){
+            if (sPendingWorkFinishers == null && sSupportHook) {
+            try {
+               sPendingWorkFinishers = (ConcurrentLinkedQueue<Runnable>) ReflectHelper.getStaticField(CLASS_NAME, FILE_NAME_PENDDING_WORK_FINISH);
+                } catch (Exception e) {
+                    Mlog.tag(TAG).w("{}", e.getLocalizedMessage());
+                    sSupportHook = false;
+                }
+            }
+            if(sPendingWorkFinishers != null){
+                Mlog.tag(TAG).d("clean QuenedWork.sPendingWorkFinishers({}) size {}" , sPendingWorkFinishers.hashCode() , sPendingWorkFinishers.size());
+                sPendingWorkFinishers.clear();
+            }
+        }
+}
+```
 
 ## 参考文献
 + android-26 源码
 + [Android-SharedPreferences源码学习与最佳实践](https://www.2cto.com/kf/201312/268547.html)   
++ [一个由SHAREDPREFERENCES引起的ANR](https://microstudent.github.io/2018/09/10/android-hack1/)

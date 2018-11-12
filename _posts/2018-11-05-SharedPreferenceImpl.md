@@ -42,7 +42,7 @@ DALVIK THREADS (62):
   at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:1031)
   at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:826)
 ```
-我们通过解析 SharedPreferenceImpl 源码来看问题是怎么出现的。
+我们通过解析 SharedPreferenceImpl 源码来看问题是怎么出现的。该问题是无解的，网上讲的使用异步 commit 代替 apply 之类的在新的 API 上都已失效。
 
 ## Analysis
 ```java
@@ -631,6 +631,7 @@ public class QueuedWork {
     public static void waitToFinish() {
         ...
         try {
+            // 这个方法里面会等待所有的 runnable 执行完
             processPendingWork();
         } finally {
             StrictMode.setThreadPolicy(oldPolicy);
@@ -679,131 +680,11 @@ public class QueuedWork {
         }
     }
 ```
-可以看出 waitToFinish 会一直等待 run 方法执行完，所以虽然 run 是在 HandlerThread 中执行的，它依然会阻塞主线程。所以问题就是 Activity 在 stop 的时候要在当前线程等待子线程中所有的 runnable 执行完成导致 ANR。
+可以看出 waitToFinish 会一直等待 run 方法执行完，所以虽然 run 是在 HandlerThread 中执行的，它依然会阻塞主线程。所以问题就是 Activity 在 stop 的时候要在当前线程等待子线程中所有的 runnable 执行完成导致 ANR。    
+上面基本上是网上的博客的观点，所以解决办法都是为了清除 sFinishers() 这样就不会在主线程中等。但是 android 26 上，waitToFinish 会执行 processPendingWork()，该方法会执行所有的 runnable ，如果 runnable 没有执行完，就会一直锁住，那么主线程在这里就会一直等导致 ANR，后面的那些 finisher.run() 根本就不会执行。
 
 ## solution
-+ 直接异步调用 commit() 方法，这样就不会调用 apply() 的 QueuedWork.addFinisher(awaitCommit)，那么 sFinishers 就为空，当 ActivityThread 调用 pause 之类的方法时，也不会在主线程等待写入操作完成。
-+ 手动清空 sFinishers 中的 Runnable:    
-```java
-/**
- * 摘自文末的引用
- */
-public static void tryHookActityThreadH() {
-    boolean hookSuccess = false;
-    try {
-        Class activityThread = Class.forName("android.app.ActivityThread");
-        Method mH = ReflectionCache.build().getMethod(activityThread, "currentActivityThread");
-        if (mH != null) {
-            Object obj = mH.invoke(activityThread);
-            if (obj != null) {
-                Handler handler = (Handler) ReflectHelper.getField(obj, "mH");
-                if (handler != null) {
-                    Field mCallbackField = ReflectionCache.build().getDeclaredField(Class.forName("android.os.Handler"), "mCallback");
-                    if (mCallbackField != null) {
-                        mCallbackField.setAccessible(true);
-                        ActivityThreadHCallbackProxy activityThreadHandler = new ActivityThreadHCallbackProxy((Handler.Callback) mCallbackField.get(handler));
-                        mCallbackField.set(handler, activityThreadHandler);
-                        hookSuccess = true;
-                    }
-                }
-            }
-        }
-    } catch (Exception e) {
-        Mlog.tag(TAG).i("HookActityThreadH:{}", e.getLocalizedMessage());
-    }
-    Mlog.tag(TAG).i("HookActityThreadH:{}", hookSuccess);
-}
-
-
-public class ActivityThreadHCallbackProxy implements Handler.Callback {
-
-    public static final String TAG = "ActivityThreadHCallbackProxy";
-    /**
-    * {@link ActivityThread#H}
-    */
-        public static final int PAUSE_ACTIVITY          = 101;
-        public static final int PAUSE_ACTIVITY_FINISHING= 102;
-        public static final int STOP_ACTIVITY_SHOW      = 103;
-        public static final int STOP_ACTIVITY_HIDE      = 104;
-        public static final int SERVICE_ARGS            = 115;
-        public static final int STOP_SERVICE            = 116;
-        public static final int SLEEPING                = 137;
-
-
-    private Handler.Callback mRawCallback;
-
-    public ActivityThreadHCallbackProxy(Handler.Callback callback) {
-        mRawCallback = callback;
-    }
-
-    @Override
-    public boolean handleMessage(Message message) {
-        switch (message.what) {
-            case STOP_ACTIVITY_HIDE:
-            case STOP_ACTIVITY_SHOW:
-                //stop activity
-                beforeWaitToFinished();
-                break;
-            case SERVICE_ARGS:
-                //SERVICE ARGS
-                beforeWaitToFinished();
-                break;
-            case STOP_SERVICE:
-                //STOP SERVICE
-                beforeWaitToFinished();
-                break;
-
-            case SLEEPING:
-                //SLEEPING
-                beforeWaitToFinished();
-                break;
-            case PAUSE_ACTIVITY:
-            case PAUSE_ACTIVITY_FINISHING:
-                //pause activity
-                beforeWaitToFinished();
-                break;
-            default:
-                break;
-        }
-        if (mRawCallback != null) {
-            mRawCallback.handleMessage(message);
-        }
-        return false;//不能返回true，否则会消耗掉事件
-    }
-
-    private void beforeWaitToFinished() {
-        QuenedWorkProxy.cleanAll();
-    }
-}
-
-public class QuenedWorkProxy {
-    private static final String TAG = "QuenedWorkProxy";
-    private static final String CLASS_NAME = "android.app.QueuedWork";
-    private static final String FILE_NAME_PENDDING_WORK_FINISH = "sPendingWorkFinishers";
-
-    public static Collection<Runnable> sPendingWorkFinishers = null;
-    private static boolean sSupportHook = true;
-
-        /**
-        * 不支持android O
-        * android O变量名改为sFinishers
-        */
-    public static void cleanAll(){
-            if (sPendingWorkFinishers == null && sSupportHook) {
-            try {
-               sPendingWorkFinishers = (ConcurrentLinkedQueue<Runnable>) ReflectHelper.getStaticField(CLASS_NAME, FILE_NAME_PENDDING_WORK_FINISH);
-                } catch (Exception e) {
-                    Mlog.tag(TAG).w("{}", e.getLocalizedMessage());
-                    sSupportHook = false;
-                }
-            }
-            if(sPendingWorkFinishers != null){
-                Mlog.tag(TAG).d("clean QuenedWork.sPendingWorkFinishers({}) size {}" , sPendingWorkFinishers.hashCode() , sPendingWorkFinishers.size());
-                sPendingWorkFinishers.clear();
-            }
-        }
-}
-```
+无。网上都是讲使用异步的 commit 方法之类的来让 sFinishers 为空，但新的 waitToFinish() 里面在子线程没有执行完 runnable 就会被一直阻塞导致 ANR。
 
 ## 参考文献
 + android-26 源码

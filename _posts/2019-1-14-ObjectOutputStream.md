@@ -77,7 +77,7 @@ ObjectOutputStream 是序列化的关键类，用于将对象转化为二进制�
 ```
 可以看出它主要是：
 1. 判断如果不是子类则无需检查权限直接返回，流程结束。
-2. 是子类的话，先清空缓存中事去引用的 Class 对象，然后根据子类的 class 创建一个 key，通过该 key 去缓存中查找，没找到就将 class 放到缓存中
+2. 是子类的话，先清空缓存中失去引用的 Class 对象，然后根据子类的 class 创建一个 key，通过该 key 去缓存中查找，没找到就将 class 放到缓存中
 3. 检查权限，没有的话就抛异常
 
 我们来看下 2，它先去清缓存中事去引用的 Class 对象，然后创建一个 key。我们先看下缓存代表什么：
@@ -171,7 +171,7 @@ ObjectOutputStream 是序列化的关键类，用于将对象转化为二进制�
             fileOutputStream.write(result, 0, result.length);
             fileOutputStream.close();
 ```
-我们来看下 String 序列化图：
+### String 序列化结构：
 ![]({{site.url}}/img/java/io/String.png)
 1. 魔数：(short)0xaced
 2. 版本：5
@@ -341,7 +341,7 @@ public class SerialModel implements Serializable {
 
 ```
 类结构中序列化数据与结构的对应内容
-```java
+```
 魔数: 0xaced
 版本: 0x5
 类型:Object:0x73

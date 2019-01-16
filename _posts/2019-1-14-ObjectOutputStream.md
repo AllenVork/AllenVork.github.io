@@ -274,7 +274,7 @@ ObjectOutputStream 是序列化的关键类，用于将对象转化为二进制�
                     // 从 off 开始读取最多 2 字节到 cbuf。不直接
                     s.getChars(off, off + csize, cbuf, 0);
                 }
-                if (pos >= MAX_BLOCK_SIZE) { // 超过缓存长度 1M 就将当前流的数据写到底层流
+                if (pos >= MAX_BLOCK_SIZE) { // 超过缓存长度 1K 就将当前流的数据写到底层流
                     drain();
                 }
                 int n = Math.min(csize - cpos, MAX_BLOCK_SIZE - pos);

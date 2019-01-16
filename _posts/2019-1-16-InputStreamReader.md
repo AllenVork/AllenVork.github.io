@@ -63,7 +63,7 @@ public class InputStreamReader extends Reader {
         if (this.ch == null) {
             this.in = var1;
             this.ch = null;
-            this.bb = ByteBuffer.allocate(8192); // 8M 的字节缓冲区
+            this.bb = ByteBuffer.allocate(8192); // 8k 的字节缓冲区
         }
 
         this.bb.flip();
@@ -71,7 +71,7 @@ public class InputStreamReader extends Reader {
 ```
 可以看出它主要就是：
 1. 根据传入的编码名称创建一个字符编码器
-2. 创建 8M 大小的字节缓冲区 
+2. 创建 8K 大小的字节缓冲区 
 
 ### Read()
 从上面的 InputStreamReader 可知，调用 InputStreamReader#read 调用的是 sd.read()。
@@ -237,15 +237,15 @@ public class InputStreamReader extends Reader {
                     return var2;
                 }
             } else {
-                var1 = this.bb.limit(); // 即 allocate 的时候分配的 8M
+                var1 = this.bb.limit(); // 即 allocate 的时候分配的 8K
                 var2 = this.bb.position(); // 首次为0
 
                 assert var2 <= var1;
 
-                int var3 = var2 <= var1 ? var1 - var2 : 0; // 8M
+                int var3 = var2 <= var1 ? var1 - var2 : 0; // 8K
 
                 assert var3 > 0;
-                // 从底层输入流中读取，首次是最多读取 8M 的数据
+                // 从底层输入流中读取，首次是最多读取 8K 的数据
                 int var4 = this.in.read(this.bb.array(), this.bb.arrayOffset() + var2, var3);
                 if (var4 < 0) {
                     int var5 = var4;
@@ -271,14 +271,14 @@ public class InputStreamReader extends Reader {
         return var1;
     }
 ```
-可以看出它实质是从底层输入流中一次性读取 8M 的数据到字节缓冲数组中。
+可以看出它实质是从底层输入流中一次性读取 8K 的数据到字节缓冲数组中。
 
 ##总结
 + InputStreamReader 组合了一个 StreamDecoder，流的读取等操作都是通过它来完成的
-+ 构造 InputStreamReader 时就会创建一个 StreamDecoder 对象，根据传入的编码名称创建一个字符编码器，然后创建一个大小为 8M 的字节缓冲数组 bb 用来存储从底层输入流读取的字节
++ 构造 InputStreamReader 时就会创建一个 StreamDecoder 对象，根据传入的编码名称创建一个字符编码器，然后创建一个大小为 8K 的字节缓冲数组 bb 用来存储从底层输入流读取的字节
 + 读取数据：
  	+ 将传进来的字符数组包装到 CharBuffer 中
-	+ 从底层输入流中一次性读取字节到缓冲数组 bb 中，读取的大小为 bb 剩余空间的大小（首次为 8M）
+	+ 从底层输入流中一次性读取字节到缓冲数组 bb 中，读取的大小为 bb 剩余空间的大小（首次为 8K）
 	+ 将读取的字节数组通过 CharsetDecoder 解码到 CharBuffer 中
 
 

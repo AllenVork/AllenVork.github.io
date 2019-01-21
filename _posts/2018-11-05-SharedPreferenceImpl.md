@@ -42,7 +42,7 @@ DALVIK THREADS (62):
   at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:1031)
   at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:826)
 ```
-我们通过解析 SharedPreferenceImpl 源码来看问题是怎么出现的。该问题是无解的，网上讲的使用异步 commit 代替 apply 之类的在新的 API 上都已失效。
+我们通过解析 SharedPreferenceImpl 源码来看问题是怎么出现的。
 
 ## Analysis
 ```java
@@ -608,7 +608,6 @@ public class QueuedWork {
 ```
 可以看出 apply() 方法就是将写硬盘操作放到 HandlerThread 中异步执行的。    
 
-
 到此，SharedPreferenceImpl 源码都分析完了，大致就是创建 SharedPreferenceImpl 时会去本地读取文件中所有的数据到 mMap，中，后面的读取操作就是直接从 mMap 中获取 value。写操作会先写到 mModified 的 HashMap 中，然后将其写到 mMap 中，再将 mMap 写到硬盘。写硬盘要区分 commit() 操作还是 apply() 操作，commit() 操作是在当前线程中写到硬盘中，而 apply 操作会将写硬盘操作封装到 Runnable 交给 QueuedWork 中的 Handler 在 HandlerThread 中异步执行。    
 
 我们再回到上面的 ANR 问题，出现 ANR 的堆栈信息为：
@@ -681,10 +680,10 @@ public class QueuedWork {
     }
 ```
 可以看出 waitToFinish 会一直等待 run 方法执行完，所以虽然 run 是在 HandlerThread 中执行的，它依然会阻塞主线程。所以问题就是 Activity 在 stop 的时候要在当前线程等待子线程中所有的 runnable 执行完成导致 ANR。    
-上面基本上是网上的博客的观点，所以解决办法都是为了清除 sFinishers() 这样就不会在主线程中等。但是 android 26 上，waitToFinish 会执行 processPendingWork()，该方法会执行所有的 runnable ，如果 runnable 没有执行完，就会一直锁住，那么主线程在这里就会一直等导致 ANR，后面的那些 finisher.run() 根本就不会执行。
+而这些 runnable 是通过 apply 提交到 sFinishers 中，或者是当前在处理 commit 提交的 runnable，此时又 commit 了，也会将 commit 的 runnable 提交到 sFinishers。
 
 ## solution
-无。网上都是讲使用异步的 commit 方法之类的来让 sFinishers 为空，但新的 waitToFinish() 里面在子线程没有执行完 runnable 就会被一直阻塞导致 ANR。
+可以看出解决办法就是避免提交 runnable 到 sFinishers 中。那么只能使用 commit，而且每次 commit 未执行完成不能执行另一个 commit 方法。这种业务逻辑就可以考虑 HandlerThread 之类的，将 runnable 都放到消息队列中，然后执行完当前 runnable 后再执行下一个。
 
 ## 参考文献
 + android-26 源码

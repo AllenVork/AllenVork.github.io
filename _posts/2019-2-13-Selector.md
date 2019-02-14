@@ -113,8 +113,7 @@ final class WindowsSelectorImpl extends SelectorImpl {
     }
 }
 ```
-它首先会通过 Pipe.open 打开一个管道，然后获得该通道的 source 端和 sink 端的文件描述符，并将 source 端的文件描述符存到 pollWrapper 中。我们来看下 Pipe.open 做了什么：    
-![]({{site.url}}/img/java/io/1.jpg)
+它首先会通过 Pipe.open 打开一个管道，然后获得该通道的 source 端和 sink 端的文件描述符，并将 source 端的文件描述符存到 pollWrapper 中。我们来看下 Pipe.open 做了什么：   
 
 ```java
 public abstract class Pipe {
@@ -348,7 +347,7 @@ class NativeObject {
 
 ## 2. serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT)
 创建了 Selector 后，就要创建一个 ServerSocketChannel，然后将该 Channel 注册到 Selector 中：        
-````java
+```java
 ServerSocketChannel ssc = ServerSocketChannel.open();  
 ssc.configureBlocking(false);  
 ssc.socket().bind(new InetSocketAddress(port));  
@@ -614,5 +613,3 @@ Java_sun_nio_ch_WindowsSelectorImpl_setWakeupSocket0(JNIEnv *env, jclass this,
 + [NIO selector原理浅析](https://blog.csdn.net/sj940611/article/details/72887074?utm_source=itdadao&utm_medium=referral)  
 + jdk 1.8 源码
 + [NIO源码阅读(3)-ServerSocketChannel](https://www.jianshu.com/p/5cadad72a2ec) 
-+ [Java NIO](https://www.jianshu.com/p/f9f5df460883)
-+ [Java NIO](https://howtodoinjava.com/java7/nio/how-to-define-path-in-java-nio/)

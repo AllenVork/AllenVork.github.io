@@ -1,521 +1,396 @@
 ---
 layout:     post
-title:      requestLayout、invalidate、postInvalidate 原理
-subtitle:   从源码角度讲解
+title:      JVM-class文件解析
+subtitle:   通过简单 demo 来解析 class 文件
 header-img: img/android3.png
 author:     Allen Vork
 catalog: true
 tags:
-    - java
+    - jvm
 ---
 
 ## 概述
-+ **requestLayout**：会触发三大流程。
-+ **invalidate**：触发 onDraw 流程，在 UI 线程调用。
-+ **postInvalidate**：触发 onDraw 流程，在非 UI 线程中调用。
-
-## requestLayout
-直接来看 View 中的 requestLayout 流程：    
+我们采用一个最简单的类来分析 class 文件是如何识别内容的：    
 ```java
-    public void requestLayout() {
-        if (mMeasureCache != null) mMeasureCache.clear();
+package com.example.classtest;
 
-        // mViewRequestingLayout 为正在执行 requestLayout 方法的视图
-        if (mAttachInfo != null && mAttachInfo.mViewRequestingLayout == null) {
-            // Only trigger request-during-layout logic if this is the view requesting it,
-            // not the views in its parent hierarchy
-            ViewRootImpl viewRoot = getViewRootImpl();
-            // 
-            if (viewRoot != null && viewRoot.isInLayout()) {
-                if (!viewRoot.requestLayoutDuringLayout(this)) {
-                    return;
-                }
-            }
-            // 将当前正在执行 requestLayout 的 View 保存到 mAttachInfo 中
-            mAttachInfo.mViewRequestingLayout = this;
-        }
-
-        mPrivateFlags |= PFLAG_FORCE_LAYOUT;
-        mPrivateFlags |= PFLAG_INVALIDATED;
-        // 这个 mParent 就是 ViewParent，ViewGroup 实现了 ViewParent
-        // 之所以不使用 ViewGroup 是因为 DecorView 的 parent 不是 View。
-        if (mParent != null && !mParent.isLayoutRequested()) {
-            mParent.requestLayout();
-        }
-        if (mAttachInfo != null && mAttachInfo.mViewRequestingLayout == this) {
-            mAttachInfo.mViewRequestingLayout = null;
-        }
-    }
+public class FieldClass {
+    private final int i = 1;
+}
 ```
-它主要分为3大流程：    
-1. 判断如果 View 的结构还处于 layout 阶段之前，则调用 ViewRootImpl#requestLayoutDuringLayout(this)，将当前的 View 对象传递进去。这点待会看 ViewRootImpl#performLayout 就知道了。
-2. 更新 mPrivateFlags 变量： PFLAG_FORCE_LAYOUT、PFLAG_INVALIDATED。
-3. 调用 parent.requestLayout。
-
-由于 ViewGroup 并没有重写 requestLayout，所以它调用的也是 View 的 requestLayout 方法。最终会调到 ViewRootImpl 中：    
+采用 `xxd FieldClass.class myFile.txt` 将 class 文件转换为16进制文件：
 ```java
----------ViewRootImpl------------
-
-    @Override
-    public void requestLayout() {
-        if (!mHandlingLayoutInLayoutRequest) {
-            checkThread();
-            mLayoutRequested = true;
-            scheduleTraversals();
-        }
-    }
+00000000: cafe babe 0000 0033 0016 0a00 0400 1209  .......3........
+00000010: 0003 0013 0700 1407 0015 0100 0169 0100  .............i..
+00000020: 0149 0100 0d43 6f6e 7374 616e 7456 616c  .I...ConstantVal
+00000030: 7565 0300 0000 0101 0006 3c69 6e69 743e  ue........<init>
+00000040: 0100 0328 2956 0100 0443 6f64 6501 000f  ...()V...Code...
+00000050: 4c69 6e65 4e75 6d62 6572 5461 626c 6501  LineNumberTable.
+00000060: 0012 4c6f 6361 6c56 6172 6961 626c 6554  ..LocalVariableT
+00000070: 6162 6c65 0100 0474 6869 7301 0022 4c63  able...this.."Lc
+00000080: 6f6d 2f65 7861 6d70 6c65 2f63 6c61 7373  om/example/class
+00000090: 7465 7374 2f46 6965 6c64 436c 6173 733b  test/FieldClass;
+000000a0: 0100 0a53 6f75 7263 6546 696c 6501 000f  ...SourceFile...
+000000b0: 4669 656c 6443 6c61 7373 2e6a 6176 610c  FieldClass.java.
+000000c0: 0009 000a 0c00 0500 0601 0020 636f 6d2f  ........... com/
+000000d0: 6578 616d 706c 652f 636c 6173 7374 6573  example/classtes
+000000e0: 742f 4669 656c 6443 6c61 7373 0100 106a  t/FieldClass...j
+000000f0: 6176 612f 6c61 6e67 2f4f 626a 6563 7400  ava/lang/Object.
+00000100: 2100 0300 0400 0000 0100 1200 0500 0600  !...............
+00000110: 0100 0700 0000 0200 0800 0100 0100 0900  ................
+00000120: 0a00 0100 0b00 0000 3800 0200 0100 0000  ........8.......
+00000130: 0a2a b700 012a 04b5 0002 b100 0000 0200  .*...*..........
+00000140: 0c00 0000 0a00 0200 0000 0300 0400 0400  ................
+00000150: 0d00 0000 0c00 0100 0000 0a00 0e00 0f00  ................
+00000160: 0000 0100 1000 0000 0200 11              ...........
 ```
-它主要是检查了一下线程，如果不在主线程就会抛异常。继续来看 scheduleTraversals()：    
+
+通过 class 文件的结构可知：
 ```java
----------ViewRootImpl------------
-    void scheduleTraversals() {
-        if (!mTraversalScheduled) {
-            mTraversalScheduled = true;
-            // 插入同步屏障，表示当前任务不可打断
-            mTraversalBarrier = mHandler.getLooper().getQueue().postSyncBarrier();
-            // 将绘制任务交给 Choreographer，下次信号到来时会执行该任务。
-            mChoreographer.postCallback(
-                    Choreographer.CALLBACK_TRAVERSAL, mTraversalRunnable, null);
-            if (!mUnbufferedInputDispatch) {
-                scheduleConsumeBatchedInput();
-            }
-            notifyRendererOfFramePending();
-            pokeDrawLockIfNeeded();
-        }
-    }
+ClassFile {
+  u4              magic;                         
+  u2              minor_version;
+  u2              major_version;
+  u2              constant_pool_count;
+  cp_info         constant_pool[constant_pool_count-1];
+  u2              access_flags;
+  u2              this_class;
+  u2              super_class;
+  u2              interfaces_count;
+  u2              interfaces[interfaces_count];
+  u2              fields_count;
+  field_info      fields[fields_count];
+  u2              methods_count;
+  method_info     methods[methods_count];
+  u2              attributes_count;
+  attribute_info  attributes[attributes_count];
+}
 ```
-它会先插入同步屏障，然后将任务交给 Choreographer，当垂直信号到来时就会执行。我们看下它执行了什么：    
+
++ 魔数：cafe baby。
++ 次版本号：0000
++ 主版本号：0033，即51。jdk 1.7
++ 常量池计数器：0016，即 22-1=21个常量
++ 常量池：存放各种数据类型，可以看作是数组或者集合。既然是数组或者集合，就要确定它的长度，那么就是上面的常量池计数器。   
+
+-----------------
+
+### 常量池
+常量池的结构基本为：
 ```java
----------ViewRootImpl------------
-    void doTraversal() {
-        if (mTraversalScheduled) {
-            mTraversalScheduled = false;
-            // 将同步屏障移除
-            mHandler.getLooper().getQueue().removeSyncBarrier(mTraversalBarrier);
-            // 它就会执行 measure、layout、draw 的流程
-            performTraversals();
-
-            if (mProfile) {
-                Debug.stopMethodTracing();
-                mProfile = false;
-            }
-        }
-    }
+cp_info { 
+    u1 tag; 
+    u1 info[]; 
+}
 ```
-可以看出 requestLayout 就是重新执行 View 的三大流程。整个过程都是先向上传递再向下传递。整个 View 树结构就是一个双向指针结构。可以看出他就是一个责任链模式。     
 
-执行到 measure 后，我们来看下它做了什么：    
+#### 第1个常量
+那么首先看第一个 u1 的 tag 为 0a。即为10。通过查表可知，这个结构体为:    
 ```java
----------View------------
-        // 获取之前在 view 中设置的 PFLAG_FORCE_LAYOUT
-        final boolean forceLayout = (mPrivateFlags & PFLAG_FORCE_LAYOUT) == PFLAG_FORCE_LAYOUT;
-        if (forceLayout || needsLayout) {
-            // first clears the measured dimension flag
-            mPrivateFlags &= ~PFLAG_MEASURED_DIMENSION_SET;
-
-            resolveRtlPropertiesIfNeeded();
-
-            int cacheIndex = forceLayout ? -1 : mMeasureCache.indexOfKey(key);
-            if (cacheIndex < 0 || sIgnoreMeasureCache) {
-                // measure ourselves, this should set the measured dimension flag back
-                onMeasure(widthMeasureSpec, heightMeasureSpec);
-                mPrivateFlags3 &= ~PFLAG3_MEASURE_NEEDED_BEFORE_LAYOUT;
-            } else {
-                long value = mMeasureCache.valueAt(cacheIndex);
-                // Casting a long to int drops the high 32 bits, no mask needed
-                setMeasuredDimensionRaw((int) (value >> 32), (int) value);
-                mPrivateFlags3 |= PFLAG3_MEASURE_NEEDED_BEFORE_LAYOUT;
-            }
-            // 然后再添加一个 LAYOUT_REQUERED flag
-            mPrivateFlags |= PFLAG_LAYOUT_REQUIRED;
-        }
+CONSTANT_Methodref_info { 
+    u1 tag; 
+    u2 class_index; 
+    u2 name_and_type_index; 
+}
 ```
-我们添加了 forcelayout 标志后就会去执行 onMeasure 操作，后面又添加了一个 LAYOUT_REQUIRED 标志，它是用在 layout 中的：    
+那么这是一个方法的符号引用。后面有两个 u2 类型的索引：    
+
+- class_index：表示定义该字段的类或接口在常量池中的索引
+- name_and_type_index：类/接口的**字段名和字段描述符**在常量池中的索引
+
+那么 class_index:00 04，即为常量池4号位置，name_and_type_index：00 12，即为常量池18号位置。由于常量池还没解析完，还不知道这个索引对应的值是多少，所以我们继续往后看。
+
+### 第2个常量
+type：09，那么结构体为和 method_info 一样：
 ```java
----------View------------
-    public void layout(int l, int t, int r, int b) {
-        ...
-        if (changed || (mPrivateFlags & PFLAG_LAYOUT_REQUIRED) == PFLAG_LAYOUT_REQUIRED) {
-            onLayout(changed, l, t, r, b);
-            ...
-        }
-    }
+CONSTANT_Fieldref_info {
+    u1 tag;
+    u2 class_index;
+    u2 name_and_type_index;
+}
 ```
-可以看出设置那个标志的目的就是强制布局。可以看出，它只会更新有设置这些 flag 的 View，并不是会将所有 View 的三大流程都执行一遍。
++ class_index：0003，即在常量池中的位置为3
++ name_and_type_index：0013，即在常量池中的位置为19
 
-## 为什么在 ViewGroup 的 onLayout 中调用 requestLayout 不会导致死递归
-我们知道 onLayout 调用 requestLayout 会触发 View 的三大流程重新执行，这时又会执行到 onLayout，又会触发 requestLayout，这样就会导致死递归。那 google 是怎么解决的呢？    
+### 第3个常量
+tag：07，那么结构体为：
 ```java
----------View------------
-    public void requestLayout() {
-        if (mMeasureCache != null) mMeasureCache.clear();
-        // View.AttachInfo 保存 View 和 Window 之间的信息，每一个被添加到窗口上的 View 都有对应的 AttachInfo。
-        if (mAttachInfo != null && mAttachInfo.mViewRequestingLayout == null) {
-            ViewRootImpl viewRoot = getViewRootImpl();
-            // 当前整个 View 树的 onLayout 还没执行完的话，如果有 View 调用 requestLayout，
-            // 就将这个 View 放到 ViewRootImpl 的任务队列中。当 onLayout 执行完成后就会调用这个
-            // view 的 layout 方法。
-            if (viewRoot != null && viewRoot.isInLayout()) {
-                if (!viewRoot.requestLayoutDuringLayout(this)) {
-                    return;
-                }
-            }
-            mAttachInfo.mViewRequestingLayout = this;
-        }
-        // ······
-    }
+CONSTANT_Class_info {
+    u1 tag;
+    u2 name_index; // 常量池中该索引处的结构一定是 CONSTANT_Utf8_info，代表类/接口名
+}
 ```
-如果 View 树处于 layout 阶段，即 DecorView 的 layout 没执行完，如果此时正在 layout 的某个 View 调用 requestLayout，会将这个任务放到 ViewRootImpl 的任务队列中，这个任务队列的执行时在 ViewRootImpl#performLayout 中：    
+它用于表示一个类或接口。    
+
++ name_index：0014，即常量池中 20 的位置是一个 CONSTANT_Utf8_info 的结构体，代表类/接口的名字。    
+
+### 第4个常量
+tag：07，那么和上面一样：    
++ name_index：0015，即常量池中 21 的位置是一个 CONSTANT_Utf8_info 的结构体，代表类/接口的名字。  
+
+### 第5个常量
+tag：01，那么结构体为：    
 ```java
-    private void performLayout(WindowManager.LayoutParams lp, int desiredWindowWidth,
-            int desiredWindowHeight) {
-        mLayoutRequested = false;
-        try {
-            // host 即 DecorView，它会执行 decorView 的 layout 方法
-            host.layout(0, 0, host.getMeasuredWidth(), host.getMeasuredHeight());
-
-            // 执行完成后将 mInLayout 设为 false。
-            mInLayout = false;
-            // 然后再去执行任务队列中的任务
-            int numViewsRequestingLayout = mLayoutRequesters.size();
-            if (numViewsRequestingLayout > 0) {
-                ArrayList<View> validLayoutRequesters = getValidLayoutRequesters(mLayoutRequesters,
-                        false);
-                if (validLayoutRequesters != null) {
-                    mHandlingLayoutInLayoutRequest = true;
-                    int numValidRequests = validLayoutRequesters.size();
-                    for (int i = 0; i < numValidRequests; ++i) {
-                        final View view = validLayoutRequesters.get(i);
-                        view.requestLayout(); // 调用任务队列里的 View 的 requestLayout
-                    }
-                    measureHierarchy(host, lp, mView.getContext().getResources(),
-                            desiredWindowWidth, desiredWindowHeight);
-                    mInLayout = true;
-                    // 又调用了 decorView 的 layout 方法
-                    host.layout(0, 0, host.getMeasuredWidth(), host.getMeasuredHeight());
-
-                    mHandlingLayoutInLayoutRequest = false;
-                }
-
-            }
-        } finally {
-            Trace.traceEnd(Trace.TRACE_TAG_VIEW);
-        }
-        mInLayout = false;
-    }
+CONSTANT_Utf8_info {
+    u1 tag;
+    u2 length; // utf-8 编码的字符占用的字节数
+    u1 bytes[length]; // 字符串
+}
 ```
-这个方法是由 Choreographer 执行的，用于遍历 View 树执行3大流程，具体逻辑：    
-1. 执行 DecorView#layout，他就会触发所有的子 view 的三大流程
-2. 整个 View 树执行完成后就去将 mInLayout 设为 false，代表当前没有在布局。那么某个 view 如果在 onLayout 中调用了 requestLayout 方法的话，就可以直接触发正常的流程，而不会被添加到任务队列中。
-3. 然后执行任务队列中的任务。他就是取出队列中所有的 view，然后调用它的 requestLayout 方法。
++ length：00 01，即长度为1
++ bytes[1]：69，使用[在线转换工具](http://www.bejson.com/convert/ox2str/) 将起转换为字符串即为 i
 
-那么问题来了，执行 View 的 requestLayout 方法，这样又会从下往上传递，再从上往下执行三大流程，执行到这个 View 的 onLayout 时，又会调用 requestLayout 方法，因为当时处于 layout 状态，所以会将这个 requestLayout 任务添加到任务队列中。等到整个任务执行完成后，它又回去执行任务队列中的任务，循环往复。 那么问题还是没有解决。    
-我们来想一下 layout 的目的是干什么的，他就是将 view 绘制屏幕上的确切位置上。如果 View 的坐标没变的话，为什么还需要重新绘制？所以答案就在 layout 里面：    
+### 第6个常量
+tag：01，那么和还是上面相同：
++ length：00 01，即长度为1
++ bytes[1]：49，即为 I 
+
+### 第7个常量
+tag：01，那么和还是上面相同：
++ length：00 0d，即长度为13
++ bytes[13]：43 6f6e 7374 616e 7456 616c 7565，即为 ConstantValue
+
+### 第8个常量
+tag：03，结构体为：    
 ```java
-    public void layout(int l, int t, int r, int b) {
-
-        boolean changed = isLayoutModeOptical(mParent) ?
-                setOpticalFrame(l, t, r, b) : setFrame(l, t, r, b);
-
-        if (changed || (mPrivateFlags & PFLAG_LAYOUT_REQUIRED) == PFLAG_LAYOUT_REQUIRED) {
-            onLayout(changed, l, t, r, b);
-            // ······
-        }
-    }
+CONSTANT_Integer_info {
+    u1 tag;
+    u4 bytes;
+}
 ```
-这个 change 变量就是判断坐标有没有发生改变，发生了才会调用 onLayout 进行重新布局。    
+即为一个整型：    
++ bytes：00 0000 01，值为 1。
 
+### 第9个常量
+tag：01，那么和还是上面相同：
++ length：00 06，即长度为6
++ bytes[6]：3c69 6e69 743e，即为 <init>
 
-### 总结
-requestLayout 的流程：    
-1. 给 view 的 flag 添加2个变量：FORCE_LAYOUT 和 INVALIDATE。然后调用 parent 的 requestLayout，执行相同的流程
-2. 最终执行到 ViewRootImpl 中。他会将执行遍历的操作封装到 Runnable 中并丢给 Choreographer 处理。Choreographer 在下一个垂直信号到来的时候就会执行这个 Runnable。它里面就会去执行那3大流程。
-3. 首先它会执行到 measure 方法，它里面就会根据 requestLayout 中设置的 FORCE_LAYOUT 的标志来调用 onMeasure 方法。执行完成之后就会设置一个 LAYOUT_REQUIRE 标志。然后 layout 方法中又会根据这个这个标志来调用 onLayout 方法。 onDraw 方法也是类似的流程。
+### 第10个常量
+tag：01，那么和还是上面相同：
++ length：00 03，即长度为3
++ bytes[3]：28 2956，即为 ()V
 
-可以看出它是一个从下往上回溯，然后从上往下遍历的过程，它是一个责任链模式。那么如果我们直接在 onLayout 中调用 requestLayout 的话，那么这个责任链模式是一个环形的，那么就会造成死递归。但是你真正去执行的时候，它是不会出现这种现象的。    
-原因：我们来看下如果直接在 onLayout 中调用 requestLayout 会发生什么。requestLayout 首先会判断当前是不是正在 layout，如果是的话，则将执行这个 requestLayout 的 view 放到 ViewRootImpl 中的任务队列中，而不会去像之前那样往上回溯。当 layout 过程结束后，他就会去执行这个任务队列。他就是取出 view，然后调用它的 requestLayout 方法。然后走一遍之前的流程，调用到这个 view 的 onLayout 方法中，这样又会调用 requestLayout 方法。那么问题还是没有解决，但是我们可以发现，它其实是没有调用的，那么就往上找到 layout 方法中，前面讲到了执行 onLayout 方法是会根据你设置的 FORCE_LAYOUT 之类的调用进来。由于它是在 layout 时调用的 requestLayout，是直接将 view 加入任务队列中，然后 return 的，并没有添加那些参数，那么就不会强制 layout。除了这个参数外，还有一个参数会控制它是否执行 onLayout 方法，就是 changed，changed 就是看你这个布局的位置有没有发生改变，这个时候肯定为 false。那么2个条件都不满足，就不会去执行 onLayout 了，也就不会造成死递归。
+### 第11个常量
+tag：01，那么和还是上面相同：
++ length：00 04，即长度为4
++ bytes[4]：43 6f64 65，即为 Code
 
-## invalidate
-invalidate 分为全局刷新和局部刷新。全局刷新的话是刷新整个 view 树，而局部刷新会一当前 view 为根开始刷新。
+### 第12个常量
+tag：01，那么和还是上面相同：
++ length：000f，即长度为15
++ bytes[15]：4c69 6e65 4e75 6d62 6572 5461 626c 65，即为 LineNumberTable
 
+### 第13个常量
+tag：01，那么和还是上面相同：
++ length：0012，即长度为18
++ bytes[17]：4c6f 6361 6c56 6172 6961 626c 6554 6162 6c65，即为 LocalVariableTable
+
+### 第14个常量
+tag：01，那么和还是上面相同：
++ length：00 04，即长度为4
++ bytes[4]：74 6869 73，即为 this
+
+### 第15个常量
+tag：01，那么和还是上面相同：
++ length：0022，即长度为34
++ bytes[34]：4c63 6f6d 2f65 7861 6d70 6c65 2f63 6c61 7373 7465 7374 2f46 6965 6c64 436c 6173 733b，即为 Lcom/example/classtest/FieldClass
+
+### 第16个常量
+tag：01，那么和还是上面相同：
++ length：00 0a，即长度为10
++ bytes[10]：53 6f75 7263 6546 696c 65，即为 SourceFile
+
+### 第17个常量
+tag：01，那么和还是上面相同：
++ length：000f，即长度为15
++ bytes[15]：4669 656c 6443 6c61 7373 2e6a 6176 61，即为 FieldClass.java
+
+### 第18个常量
+tag：0c，那么结构体为：    
 ```java
-    public void invalidate() {
-        invalidate(true); // true 表示局部刷新
-    }
-
-    public void invalidate(boolean invalidateCache) {
-        // 前四个参数为 View 相对于自己的坐标
-        invalidateInternal(0, 0, mRight - mLeft, mBottom - mTop, invalidateCache, true);
-    }
-
-    void invalidateInternal(int l, int t, int r, int b, boolean invalidateCache,
-            boolean fullInvalidate) {
-        if (mGhostView != null) {
-            mGhostView.invalidate(true);
-            return;
-        }
-        
-        // 跳过刷新条件：View 不可见，并且自己没有动画执行，并且当前 View 为 DecorView 或者父布局也没有过度动画执行
-        // 如果 parent 为 ViewRootImpl 的话，说明当前 View 为 DecorView，
-        if (skipInvalidate()) {
-            return;
-        }
-
-        if ((mPrivateFlags & (PFLAG_DRAWN | PFLAG_HAS_BOUNDS)) == (PFLAG_DRAWN | PFLAG_HAS_BOUNDS)
-                || (invalidateCache && (mPrivateFlags & PFLAG_DRAWING_CACHE_VALID) == PFLAG_DRAWING_CACHE_VALID)
-                || (mPrivateFlags & PFLAG_INVALIDATED) != PFLAG_INVALIDATED
-                || (fullInvalidate && isOpaque() != mLastIsOpaque)) {
-            if (fullInvalidate) {
-                mLastIsOpaque = isOpaque();
-                mPrivateFlags &= ~PFLAG_DRAWN;
-            }
-
-            mPrivateFlags |= PFLAG_DIRTY;
-
-            if (invalidateCache) {
-                mPrivateFlags |= PFLAG_INVALIDATED;
-                mPrivateFlags &= ~PFLAG_DRAWING_CACHE_VALID;
-            }
-
-            // Propagate the damage rectangle to the parent view.
-            final AttachInfo ai = mAttachInfo;
-            final ViewParent p = mParent;
-            if (p != null && ai != null && l < r && t < b) {
-                final Rect damage = ai.mTmpInvalRect; 
-                damage.set(l, t, r, b); // 这些坐标是需要 invalidate 的
-
-                // 调用 ViewGroup 的 invalidateChild
-                p.invalidateChild(this, damage);
-            }
-
-            // Damage the entire projection receiver, if necessary.
-            if (mBackground != null && mBackground.isProjected()) {
-                final View receiver = getProjectionReceiver();
-                if (receiver != null) {
-                    receiver.damageInParent();
-                }
-            }
-        }
-    }
+// 用于表示一个字段或方法
+CONSTANT_NameAndType_info {
+    u1 tag;
+    // 该 index 指向常量池中的 CONSTANT_Utf8_info 结构，表示特殊的方法名 <init> 或者
+    // 方法，字段，局部变量的非限定名(unqualified name）
+    u2 name_index;
+    
+    // 该 index 指向常量池中的 CONSTANT_Utf8_info 结构，表示字段/方法的类型
+    u2 descriptor_index;
+}
 ```
-1. 根据 View 的可见性，动画之类的判断需不需要跳过刷新
-2. 不跳过的话，将记录了该 view 相对于他的 parent 的坐标放到 damage 中，然后调用 ViewParent#invalidateChild 来调整这个区域。
++ name_index：0009，常量池 #9 位置，前面已经解析出来了为 <init>
++ descriptor_index：000a，常量池 #10 位置，为 ()V，即返回值类型为 V
+
+解释下限定名和非限定名：    
++ 限定名：即为全名，带包路径的用点隔开，例如: java.lang.String
++ 非限定名：短名，不带包的，即 String
+
+### 第19个常量
+tag：0c，那么和上面一样：
++ name_index：00 05，那么值为常量池中 #5 位置，为1
++ descriptor_index：00 06，那么值在常量池 #6 位置，为 I
+
+### 第20个常量
+tag：01，那么和还是上面相同：
++ length：0020，即长度为32
++ bytes[32]：636f 6d2f 6578 616d 706c 652f 636c 6173 7374 6573 742f 4669 656c 6443 6c61 7373，即为 com/example/classtest/FieldClass
+
+### 第21个常量
+tag：01，那么和还是上面相同：
++ length：0010，即长度为16
++ bytes[16]：6a 6176 612f 6c61 6e67 2f4f 626a 6563 74，即为 java/lang/Object
+
+那么常量池就解析完了，可以看出它的结构为：  
+```cmd
+Constant pool:
+   #1 = Methodref          #4.#18         // java/lang/Object."<init>":()V
+   #2 = Fieldref           #3.#19         // com/example/classtest/FieldClass.i:I
+   #3 = Class              #20            // com/example/classtest/FieldClass
+   #4 = Class              #21            // java/lang/Object
+   #5 = Utf8               i
+   #6 = Utf8               I
+   #7 = Utf8               ConstantValue
+   #8 = Integer            1
+   #9 = Utf8               <init>
+  #10 = Utf8               ()V
+  #11 = Utf8               Code
+  #12 = Utf8               LineNumberTable
+  #13 = Utf8               LocalVariableTable
+  #14 = Utf8               this
+  #15 = Utf8               Lcom/example/classtest/FieldClass;
+  #16 = Utf8               SourceFile
+  #17 = Utf8               FieldClass.java
+  #18 = NameAndType        #9:#10         // "<init>":()V
+  #19 = NameAndType        #5:#6          // i:I
+  #20 = Utf8               com/example/classtest/FieldClass
+  #21 = Utf8               java/lang/Object
+```
+
+---------------
+
++ 访问标志：0021，即33，[查表](https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-4.html#jvms-4.1-200-E.1) 可知为1+32，所以类的访问权限和属性为 public。
++ this_class：00 03，即为常量池3号位置 com/example/classtest/FieldClass
++ super_class：00 04，即为常量池4号位置 java/lang/Object
++ interfaces_count：00 00，即没有实现接口
++ interfaces[]：无
++ fields_count：00 01，即1个字段
++ field_info：字段表集合，表示该类中声明的变量。变量指的是成员变量，不包含方法中的局部变量。
+
+--------
+
+### filed_info
+```java
+field_info {
+    u2             access_flags; //表示访问权限和属性，通过值去查表可得
+    u2             name_index;
+    u2             descriptor_index;
+    u2             attributes_count;
+    attribute_info attributes[attributes_count];
+}
+```
++ access_flags：00 12，即18。[查表](https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-4.html#jvms-4.5-200-A.1) 可知为2+16，即 private final 类型。
++ name_index：00 05，即常量池5号位置，为 i
++ descriptor_index：00 06，即常量池6号位置，为 I
++ attributes_count：00 01。表示有1个额外属性。一个方法可以有任意个数的属性
++ attribute_info：属性信息        
 
 ```java
-    public final void invalidateChild(View child, final Rect dirty) {
-        final AttachInfo attachInfo = mAttachInfo;
-        if (attachInfo != null && attachInfo.mHardwareAccelerated) {
-            // 硬件加速的话，直接调用下面这个方法
-            onDescendantInvalidated(child, child);
-            return;
-        }
-
-        ViewParent parent = this;
-        if (attachInfo != null) {
-            // 当前 View 是否正在执行动画
-            final boolean drawAnimation = (child.mPrivateFlags & PFLAG_DRAW_ANIMATION) != 0;
-
-            // Check whether the child that requests the invalidate is fully opaque
-            // Views being animated or transformed are not considered opaque because we may
-            // be invalidating their old position and need the parent to paint behind them.
-            Matrix childMatrix = child.getMatrix();
-            // 不透明并且没有（执行）动画，并且变化矩阵没有变化（Matrix 是用于平移，缩放等）
-            final boolean isOpaque = child.isOpaque() && !drawAnimation &&
-                    child.getAnimation() == null && childMatrix.isIdentity();
-            // Mark the child as dirty, using the appropriate flag
-            // Make sure we do not set both flags at the same time
-            int opaqueFlag = isOpaque ? PFLAG_DIRTY_OPAQUE : PFLAG_DIRTY;
-
-            if (child.mLayerType != LAYER_TYPE_NONE) {
-                mPrivateFlags |= PFLAG_INVALIDATED;
-                mPrivateFlags &= ~PFLAG_DRAWING_CACHE_VALID;
-            }
-
-            // 记录子 view 相对于 parent 的左上角的坐标
-            final int[] location = attachInfo.mInvalidateChildLocation;
-            location[CHILD_LEFT_INDEX] = child.mLeft;
-            location[CHILD_TOP_INDEX] = child.mTop;
-            if (!childMatrix.isIdentity() ||
-                    (mGroupFlags & ViewGroup.FLAG_SUPPORT_STATIC_TRANSFORMATIONS) != 0) {
-                RectF boundingRect = attachInfo.mTmpTransformRect;
-                boundingRect.set(dirty);
-                Matrix transformMatrix;
-                if ((mGroupFlags & ViewGroup.FLAG_SUPPORT_STATIC_TRANSFORMATIONS) != 0) {
-                    Transformation t = attachInfo.mTmpTransformation;
-                    boolean transformed = getChildStaticTransformation(child, t);
-                    if (transformed) {
-                        transformMatrix = attachInfo.mTmpMatrix;
-                        transformMatrix.set(t.getMatrix());
-                        if (!childMatrix.isIdentity()) {
-                            transformMatrix.preConcat(childMatrix);
-                        }
-                    } else {
-                        transformMatrix = childMatrix;
-                    }
-                } else {
-                    transformMatrix = childMatrix;
-                }
-                transformMatrix.mapRect(boundingRect);
-                dirty.set((int) Math.floor(boundingRect.left),
-                        (int) Math.floor(boundingRect.top),
-                        (int) Math.ceil(boundingRect.right),
-                        (int) Math.ceil(boundingRect.bottom));
-            }
-
-            // 从当前 View 向上一直遍历到 ViewRootImpl
-            do {
-                View view = null;
-                if (parent instanceof View) { // 不是 ViewRootImpl 就将 ViewParent 转换为 View
-                    view = (View) parent;
-                }
-
-                if (drawAnimation) { // 当前 View 在执行动画，添加动画标志
-                    if (view != null) {
-                        view.mPrivateFlags |= PFLAG_DRAW_ANIMATION;
-                    } else if (parent instanceof ViewRootImpl) {
-                        ((ViewRootImpl) parent).mIsAnimating = true;
-                    }
-                }
-
-                // 给 View 添加 dirty 标志表示需要重绘
-                if (view != null) {
-                    if ((view.mViewFlags & FADING_EDGE_MASK) != 0 &&
-                            view.getSolidColor() == 0) {
-                        opaqueFlag = PFLAG_DIRTY;
-                    }
-                    if ((view.mPrivateFlags & PFLAG_DIRTY_MASK) != PFLAG_DIRTY) {
-                        view.mPrivateFlags = (view.mPrivateFlags & ~PFLAG_DIRTY_MASK) | opaqueFlag;
-                    }
-                }
-
-                // 调用当前 view 的 invalidateChildInParent，返回当前 view 的 parent，最后返回的是 ViewRootImpl
-                // 参数就是告诉父视图，绘制的子视图以及子视图相对自己的坐标系
-                parent = parent.invalidateChildInParent(location, dirty);
-                if (view != null) {
-                    // Account for transform on current parent
-                    Matrix m = view.getMatrix();
-                    if (!m.isIdentity()) {
-                        RectF boundingRect = attachInfo.mTmpTransformRect;
-                        boundingRect.set(dirty);
-                        m.mapRect(boundingRect);
-                        dirty.set((int) Math.floor(boundingRect.left),
-                                (int) Math.floor(boundingRect.top),
-                                (int) Math.ceil(boundingRect.right),
-                                (int) Math.ceil(boundingRect.bottom));
-                    }
-                }
-            } while (parent != null);
-        }
-    }
+attribute_info {
+    u2 attribute_name_index; // 属性名称在常量池中的索引。不同的 attribute 都是通过它来区分
+    u4 attribute_length; // 属性长度
+    u1 info[attribute_length]; // 属性值
+}
 ```
-可以看出它就是给 view 添加动画，dirty 之类的标志，然后调用它的 invalidateInParent 方法：    
+
+    + attribute_name_index：00 07，即该 attribute 类型为 ConstantValue：
+
 ```java
-    public ViewParent invalidateChildInParent(final int[] location, final Rect dirty) {
-        if ((mPrivateFlags & (PFLAG_DRAWN | PFLAG_DRAWING_CACHE_VALID)) != 0) {
-            if ((mGroupFlags & (FLAG_OPTIMIZE_INVALIDATE | FLAG_ANIMATION_DONE))
-                    != FLAG_OPTIMIZE_INVALIDATE) { // 没有动画，或者动画执行完了
-                // dirty 变换为相对于父视图的坐标系的值。相对于父视图左上角的坐标减去当前 view 滑动的距离
-                // 整个得到的就是当前 view 相对于他的 parent 的坐标
-                dirty.offset(location[CHILD_LEFT_INDEX] - mScrollX,
-                        location[CHILD_TOP_INDEX] - mScrollY);
-                // 不裁剪（取最大值来刷新），则取并集，取最大区域
-                if ((mGroupFlags & FLAG_CLIP_CHILDREN) == 0) {
-                    dirty.union(0, 0, mRight - mLeft, mBottom - mTop);
-                }
-
-                // 获取当前 View 相对于 Parent 的左上角的坐标
-                final int left = mLeft;
-                final int top = mTop;
-                // 裁减的话，则取交集（仅仅绘制子 View 内有效的区间）
-                if ((mGroupFlags & FLAG_CLIP_CHILDREN) == FLAG_CLIP_CHILDREN) {
-                    if (!dirty.intersect(0, 0, mRight - left, mBottom - top)) {
-                        dirty.setEmpty();
-                    }
-                }
-
-                location[CHILD_LEFT_INDEX] = left;
-                location[CHILD_TOP_INDEX] = top;
-            } else {//如果当前ViewGroup中有动画要执行
-
-                if ((mGroupFlags & FLAG_CLIP_CHILDREN) == FLAG_CLIP_CHILDREN) {
-                    dirty.set(0, 0, mRight - mLeft, mBottom - mTop);
-                } else {
-                    // in case the dirty rect extends outside the bounds of this container
-                    dirty.union(0, 0, mRight - mLeft, mBottom - mTop);
-                }
-                location[CHILD_LEFT_INDEX] = mLeft;
-                location[CHILD_TOP_INDEX] = mTop;
-
-                mPrivateFlags &= ~PFLAG_DRAWN;
-            }
-            mPrivateFlags &= ~PFLAG_DRAWING_CACHE_VALID;
-            if (mLayerType != LAYER_TYPE_NONE) {
-                mPrivateFlags |= PFLAG_INVALIDATED;
-            }
-
-            return mParent;
-        }
-
-        return null;
-    }
+ConstantValue_attribute {  
+   u2 attribute_name_index;  // 常量池中该位置的值为 ConstantValue
+   u4 attribute_length;  // 定长，固定为 2
+   u2 constantvalue_index;  // 常量池的索引
+} 
 ```
-可以看出它整个就是根据当前 view 相对自己的坐标，找到最终相对于父视图的坐标。若设置 FLAG_CLIP_CHILDREN 则仅绘制调用 invalidate 方法的视图区域，若没有这个标志，则会与父视图做并集，最终绘制父视图的区域。    
-最后触发 ViewRootImpl 的 invalidateChildInParent：    
+
+    + attribute_length：00 0000 02，即长度确实为 。
+    + constantvalue_index：00 08，即常量池8号位置，为1
+
+可以看出这个结构体就说明了有一个 field 为 private final int i = 1 
+
+> ConstantValue 是定长属性，只会出现在 field_info 中，用于表示**常量表达式的值**。该属性仅限于基本类型和 String，因为从常量池中之能饮用到基本类型和 String 的字面量。
+
+--------
+
++ methods_count：00 01，即有一个方法
++ method_info：方法表集合，表示类中的方法。
+
+---------
+
+
+method info 结构体如下，类似 filed_info：    
+
 ```java
-    public ViewParent invalidateChildInParent(int[] location, Rect dirty) {
-        checkThread();
-        if (DEBUG_DRAW) Log.v(mTag, "Invalidate child: " + dirty);
- 
-        if (dirty == null) { // 表示要重绘当前ViewRootImpl指示的整个区域
-            invalidate();
-            return null;
-        } else if (dirty.isEmpty() && !mIsAnimating) { // 表示不需要重绘
-            return null;
-        }
-
-        ...
-
-        invalidateRectOnScreen(dirty);
-
-        return null;
-    }
-
-    private void invalidateRectOnScreen(Rect dirty) {
-        final Rect localDirty = mDirty; // 要重绘的区域
-        if (!localDirty.isEmpty() && !localDirty.contains(dirty)) {
-            mAttachInfo.mSetIgnoreDirtyState = true;
-            mAttachInfo.mIgnoreDirtyState = true;
-        }
-
-        // 当前已有的 dirty 区域与此次 dirty 区域做并集
-        localDirty.union(dirty.left, dirty.top, dirty.right, dirty.bottom);
-        // Intersect with the bounds of the window to skip
-        // updates that lie outside of the visible region
-        final float appScale = mAttachInfo.mApplicationScale;
-        final boolean intersected = localDirty.intersect(0, 0,
-                (int) (mWidth * appScale + 0.5f), (int) (mHeight * appScale + 0.5f));
-        if (!intersected) {
-            localDirty.setEmpty();
-        }
-        if (!mWillDrawSoon && (intersected || mIsAnimating)) {
-            scheduleTraversals();
-        }
-    }
+method_info {
+    u2             access_flags;
+    u2             name_index;
+    u2             descriptor_index;
+    u2             attributes_count;
+    attribute_info attributes[attributes_count];
+}
 ```
-可以看出，它整个过程就是计算所要绘制的区域，然后还是和前面一样走 scheduleTraversals 流程，最终是将绘制操作放到 Choreographer 中。然后去请求监听 VSYNC 信号。信号回来后就会打印掉帧情况，减去偏移时间来纠正帧时间之类的。然后遍历那4个链表来执行回调。最终执行 scheduleTraversals 执行 performDraw。
 
-### 总结
-invalidate 方法就是一个去执行 draw 方法的过程，在执行之前它需要去确认所需要绘制的大小。它会通过自己的大小与 parent 的左上角的坐标来算出 View 相对于 parent 的坐标矩阵，然后根据 clip_child 属性来看是与父布局做∩还是∪ 来得到新的要绘制的区域。一直这样回溯到 ViewRootImpl 中计算出最终需要绘制的 dirty 区域，然后和 requestLayout 一样，将执行绘制的 runnable 交给 Choreographer 来处理。最终会调用 ViewRootImpl#performDraw。
++ access_flags：00 01，即1。[查表](https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-4.html#jvms-4.6-200-A.1) 可知为 public 类型。
++ name_index：00 09，即常量池9号位置，为 `<init>`
++ descriptor_index：00 0a，即常量池10号位置，为 ()V
++ attributes_count：00 01，表示有一个额外属性
++ attribute_info：    
 
-## PostInvalidate
-就是通过 handler 发送一个消息到 mainlooper 中，然后在主线程中执行 invalidate 方法。
+```java
+attribute_info {
+    u2 attribute_name_index; // 属性名称在常量池中的索引。不同的 attribute 都是通过它来区分
+    u4 attribute_length; // 属性长度
+    u1 info[attribute_length]; // 属性值
+}
+```
 
-## Choreographer 应用场景
-监控App性能、卡顿和帧率。 TinyDancer 就是利用 Choreographer 来检测卡顿的。他就是 post 一个 FrameDataCallback 进去，然后下一个帧时间到来时，计算2帧之间的时间有没有超过 16.6ms，超过了则掉帧。然后它每隔 700ms 统计这段事件内所有掉帧个数，以及连续掉2帧以上的个数。然后计算没有掉帧占用的比例，以及连续掉帧占用的比例然后显示出来。
 
++ attribute_name_index：00 0b，即常量池11位置，为 Code，即该 attribute 属性的类型为 Code：    
 
-## 参考文献
-+ [Android 源码分析 - View的requestLayout、invalidate和postInvalidate的实现原理](https://www.jianshu.com/p/ce30f200209e)  
-+ [View与窗口：AttachInfo](https://blog.csdn.net/savelove911/article/details/51822266) 
-+ [invalidate原理](https://www.jianshu.com/p/10a2bbc5d56a)
-+ [requestLayout()与invalidate()流程及Choroegrapher类分析](https://www.cnblogs.com/tiger-wang-ms/p/6592189.html)
+```java
+Code_attribute {
+    u2 attribute_name_index;
+    u4 attribute_length;
+    u2 max_stack;
+    u2 max_locals;
+    u4 code_length;
+    u1 code[code_length];
+    u2 exception_table_length;
+    {   u2 start_pc;
+        u2 end_pc;
+        u2 handler_pc;
+        u2 catch_type;
+    } exception_table[exception_table_length];
+    u2 attributes_count;
+    attribute_info attributes[attributes_count];
+}
+```
+
+--------
+
++ attributes_count && attribute_info：属性表。前面的方法表，字段表都包含了属性表。属性表的种类很多，可以表示源文件名称、编译生成的字节码指令、final 定义的常量、方法抛出的异常等。
+
+<!-- 
+```java
+00 0000 3800 0200 0100 0000  ........8.......
+00000130: 0a2a b700 012a 04b5 0002 b100 0000 0200  .*...*..........
+00000140: 0c00 0000 0a00 0200 0000 0300 0400 0400  ................
+00000150: 0d00 0000 0c00 0100 0000 0a00 0e00 0f00  ................
+00000160: 0000 0100 1000 0000 0200 11              ...........
+该部分后面补充
+```
+-->
+
+## References
++ [The class File Format](https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-4.html#jvms-4.3.2)
